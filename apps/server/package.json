@@ -9,6 +9,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@scrum-poker/protocol": "workspace:*"
+    "@scrum-poker/protocol": "workspace:*",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
   }
 }
