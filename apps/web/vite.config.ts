@@ -10,7 +10,13 @@ function readBasePath(): string {
     return "/";
   }
 
-  return basePath.endsWith("/") ? basePath : `${basePath}/`;
+  if (!basePath.startsWith("/") || !basePath.endsWith("/")) {
+    throw new Error(
+      `VITE_BASE_PATH must be "/" or a non-root path that starts and ends with "/". Received: "${basePath}"`,
+    );
+  }
+
+  return basePath;
 }
 
 export default defineConfig({
