@@ -79,6 +79,7 @@ export interface LoadOptions {
 }
 
 export interface LoadResult {
+  allowedUnexpectedDisconnects: number;
   completedRooms: number;
   connectedClients: number;
   durationMs: number;
@@ -136,6 +137,20 @@ function parsePositiveInteger(rawValue: string | undefined, flagName: string): n
 
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error(`${flagName} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function parseNonNegativeInteger(rawValue: string | undefined, flagName: string): number {
+  if (rawValue === undefined || !/^\d+$/.test(rawValue)) {
+    throw new Error(`${flagName} must be a non-negative integer.`);
+  }
+
+  const parsed = Number(rawValue);
+
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error(`${flagName} must be a non-negative integer.`);
   }
 
   return parsed;
@@ -225,7 +240,7 @@ export function parseLoadOptions(argv: readonly string[]): LoadOptions {
 
   return {
     allowedUnexpectedDisconnects: args.has("allowed-unexpected-disconnects")
-      ? parsePositiveInteger(args.get("allowed-unexpected-disconnects"), "--allowed-unexpected-disconnects")
+      ? parseNonNegativeInteger(args.get("allowed-unexpected-disconnects"), "--allowed-unexpected-disconnects")
       : DEFAULT_ALLOWED_UNEXPECTED_DISCONNECTS,
     baseUrl: normalizeBaseUrl(args.get("base-url")),
     durationSeconds: args.has("duration-seconds")
@@ -242,6 +257,7 @@ export function parseLoadOptions(argv: readonly string[]): LoadOptions {
 
 export function evaluateLoadResult(result: LoadResult, rssCeilingMiB = DEFAULT_RSS_CEILING_MIB): EvaluatedLoadResult {
   const reasons: string[] = [];
+  const allowedUnexpectedDisconnects = result.allowedUnexpectedDisconnects ?? DEFAULT_ALLOWED_UNEXPECTED_DISCONNECTS;
 
   if (result.connectedClients !== result.expectedClients) {
     reasons.push(`Expected ${result.expectedClients} connected clients but observed ${result.connectedClients}.`);
@@ -255,9 +271,9 @@ export function evaluateLoadResult(result: LoadResult, rssCeilingMiB = DEFAULT_R
     reasons.push(`Expected ${result.roomsAttempted} completed rooms but observed ${result.completedRooms}.`);
   }
 
-  if (result.unexpectedDisconnects !== DEFAULT_ALLOWED_UNEXPECTED_DISCONNECTS) {
+  if (result.unexpectedDisconnects > allowedUnexpectedDisconnects) {
     reasons.push(
-      `Expected ${DEFAULT_ALLOWED_UNEXPECTED_DISCONNECTS} unexpected disconnects but observed ${result.unexpectedDisconnects}.`,
+      `Expected ${allowedUnexpectedDisconnects} or fewer unexpected disconnects but observed ${result.unexpectedDisconnects}.`,
     );
   }
 
@@ -531,6 +547,7 @@ async function openStream(
   initialSnapshotCount: { value: number },
   abortSignal: AbortSignal,
   onUnexpectedDisconnect: (error: Error) => void,
+  initialSnapshotTimeoutMs: number,
 ): Promise<OpenStream> {
   const controller = new AbortController();
   const initialSnapshotDeferred = createDeferred<void>();
@@ -648,7 +665,7 @@ async function openStream(
     },
     initialSnapshot: Promise.race([
       initialSnapshotDeferred.promise,
-      defaultSleep(INITIAL_SNAPSHOT_TIMEOUT_MS, abortSignal).then(() => {
+      defaultSleep(initialSnapshotTimeoutMs, controller.signal).then(() => {
         throw new Error(`Timed out waiting for the initial snapshot for ${participant.label}.`);
       }),
     ]),
@@ -663,12 +680,15 @@ async function openStreams(
   initialSnapshotCount: { value: number },
   abortSignal: AbortSignal,
   onUnexpectedDisconnect: (error: Error) => void,
-): Promise<OpenStream[]> {
-  const streams = await Promise.all(
+  streams: OpenStream[],
+  initialSnapshotTimeoutMs: number,
+): Promise<void> {
+  const startingStreamCount = streams.length;
+  const openResults = await Promise.allSettled(
     rooms.flatMap((room) =>
       room.participants.map(async (participant) => {
         const ticket = await issueStreamTicket(fetchImpl, options.baseUrl, room.roomId, participant);
-        return openStream(
+        const stream = await openStream(
           fetchImpl,
           options.baseUrl,
           room.roomId,
@@ -678,13 +698,30 @@ async function openStreams(
           initialSnapshotCount,
           abortSignal,
           onUnexpectedDisconnect,
+          initialSnapshotTimeoutMs,
         );
+
+        streams.push(stream);
+        return stream;
       }),
     ),
   );
 
-  await Promise.all(streams.map((stream) => stream.initialSnapshot));
-  return streams;
+  const openingFailure = openResults.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+
+  if (openingFailure !== undefined) {
+    await closeStreams(streams.slice(startingStreamCount));
+    throw openingFailure.reason;
+  }
+
+  try {
+    await Promise.all(streams.slice(startingStreamCount).map((stream) => stream.initialSnapshot));
+  } catch (error) {
+    await closeStreams(streams.slice(startingStreamCount));
+    throw error;
+  }
 }
 
 async function vote(
@@ -779,7 +816,7 @@ export async function runLoadCheck(options: LoadOptions, dependencies: LoadDepen
 
   try {
     const rooms = await createRooms(fetchImpl, options);
-    const openedStreams = await openStreams(
+    await openStreams(
       fetchImpl,
       options,
       rooms,
@@ -787,9 +824,9 @@ export async function runLoadCheck(options: LoadOptions, dependencies: LoadDepen
       initialSnapshotCount,
       runAbortController.signal,
       failRun,
+      streams,
+      INITIAL_SNAPSHOT_TIMEOUT_MS,
     );
-
-    streams.push(...openedStreams);
 
     if (firstFailure !== null) {
       throw firstFailure;
@@ -808,6 +845,7 @@ export async function runLoadCheck(options: LoadOptions, dependencies: LoadDepen
     }
 
     const result: LoadResult = {
+      allowedUnexpectedDisconnects: options.allowedUnexpectedDisconnects,
       completedRooms,
       connectedClients: streams.length,
       durationMs: now() - startTimeMs,
@@ -826,6 +864,8 @@ export async function runLoadCheck(options: LoadOptions, dependencies: LoadDepen
 
     return result;
   } catch (error) {
+    runAbortController.abort(error);
+
     if (firstFailure !== null && isAbortError(error)) {
       throw firstFailure;
     }
@@ -838,6 +878,7 @@ export async function runLoadCheck(options: LoadOptions, dependencies: LoadDepen
 
 function formatSummary(result: LoadResult, evaluation: EvaluatedLoadResult): string {
   const summary = [
+    `allowedUnexpectedDisconnects=${result.allowedUnexpectedDisconnects}`,
     `clients=${result.connectedClients}/${result.expectedClients}`,
     `initialSnapshots=${result.initialSnapshots}`,
     `completedRooms=${result.completedRooms}/${result.roomsAttempted}`,

@@ -13,6 +13,8 @@ The load shape is fixed at `5` rooms x `20` participants (`100` concurrent SSE c
 - fails on partial setup or an unexpected disconnect; and
 - logs aggregate counts only, never participant tokens, facilitator tokens, stream tickets, authorization headers, or authenticated URLs.
 
+`--allowed-unexpected-disconnects` is an inclusive non-negative allowance used by the final evaluator. It defaults to `0`, so any unexpected disconnect fails the gate; with an allowance of `N`, counts through `N` pass and counts above `N` fail.
+
 ## Local 30-second check
 
 Use the server test-start command and the repository-local binary wrapper on this Windows checkout:

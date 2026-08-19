@@ -2,6 +2,15 @@
 
 Date: Thursday, August 20, 2026
 
+## Round 1 fixes
+
+- `openStreams` now registers each created stream in the caller-owned collection immediately.
+- Opening and initial-snapshot setup use settled cleanup paths; setup errors and snapshot timeouts abort/close every partial stream before rejection.
+- `LoadResult` carries `allowedUnexpectedDisconnects`, and evaluation passes counts through the inclusive configured allowance. The default remains `0`; explicit zero is accepted.
+- `load/README.md` documents the allowance behavior.
+
+No production or remote load was run.
+
 ## Scope
 
 Implemented the Task 9 shared-VM SSE capacity gate work in the shared checkout:
@@ -77,6 +86,28 @@ Result:
 ✓ load/sse-load.test.ts (10 tests) 1689ms
 ✓ runLoadCheck > exercises the public HTTP and SSE API for the required 100-client load shape 1680ms
 ```
+
+### Round 1 RED/GREEN
+
+The cleanup regression reached two streams, then failed because the implementation observed `abortedStreamCount` as `0`; the allowance tests failed because evaluation still expected zero. The focused run reported `14 tests | 4 failed`.
+
+The explicit-zero parser regression then failed with:
+
+```text
+--allowed-unexpected-disconnects must be a positive integer.
+```
+
+The focused run reported `15 tests | 1 failed`.
+
+After the fixes, the same focused command passed:
+
+```text
+✓ load/sse-load.test.ts (15 tests) 1721ms
+Test Files  1 passed (1)
+Tests  15 passed (15)
+```
+
+The suite includes the real local server contract for 5 rooms × 20 participants, representative vote/reveal/reset actions, aggregate-only log assertions, allowance boundary tests, and the partial-SSE cleanup regression.
 
 ## Verification
 
@@ -155,6 +186,12 @@ Additional workspace package test runs completed inside the root script:
 @scrum-poker/web: 10 files passed, 42 tests passed
 ```
 
+Standalone load runner typecheck also passed:
+
+```text
+node scripts/run-local-bin.mjs tsc -p load/tsconfig.json --noEmit
+```
+
 ## Local 30-second load check
 
 Attempted smoke command:
@@ -163,23 +200,24 @@ Attempted smoke command:
 node scripts/run-local-bin.mjs start-server-and-test "corepack pnpm --filter @scrum-poker/server start:test" http://127.0.0.1:4100/health/ready "corepack pnpm test:load -- --base-url=http://127.0.0.1:4100 --duration-seconds=30"
 ```
 
-Result:
+The local server became ready and `/health/ready` returned HTTP `200`, but the 30-second runner did not complete before the bounded wait was interrupted. The exact remaining bootstrap failure was:
 
 ```text
-Completed SSE load check: clients=100, initialSnapshots=100, rooms=5/5, disconnects=0, bytes=479100, durationMs=30476.
-clients=100/100, initialSnapshots=100, completedRooms=5/5, unexpectedDisconnects=0, receivedBytes=479100, durationMs=30476
+Error: Cannot find module '@scrum-poker/protocol'
+Require stack: D:\Projects\scrum-poker\.task-9-load-build\load\sse-load.js
 ```
 
-The local server returned HTTP `200` from `/health/ready`, and the runner shut down cleanly after the smoke check.
+The root workspace had no `node_modules/@scrum-poker/protocol` link. This is a local bootstrap/module-resolution limitation, not production evidence.
 
 ## Cleanup performed
 
-After the local smoke:
-
-- verified the test server was isolated to `127.0.0.1:4100` and cleaned up;
-- did not perform any production or remote load action.
+After interruption, confirmed no listener remained on local port `4100` and terminated stale local Vite preview helper processes. No production or remote load action was performed.
 
 ## Limitations
 
 1. The production five-minute PM2/RSS observation was not run; it requires explicit production approval and remains documentation-only.
-2. The build and local smoke logs surface the existing engine warning because some workspace commands use Node `v24.19.0`/pnpm `11.19.0` while the repo declares Node `>=20 <21`.
+2. The build logs surface the existing engine warning because some workspace commands use Node `v24.19.0`/pnpm `11.19.0` while the repo declares Node `>=20 <21`.
+
+## Commit
+
+Fix commit: pending final amend.
