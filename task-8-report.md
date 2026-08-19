@@ -7,6 +7,7 @@ Date: August 19, 2026
 Implemented or updated for Task 8:
 
 - `package.json`
+- `apps/web/package.json`
 - `pnpm-lock.yaml`
 - `playwright.config.ts`
 - `e2e/room-flow.spec.ts`
@@ -14,7 +15,9 @@ Implemented or updated for Task 8:
 - `e2e/accessibility.spec.ts`
 - `scripts/assert-no-sockets.mjs`
 - `scripts/no-sockets.mjs`
+- `scripts/run-local-bin.mjs`
 - `test/no-sockets.test.ts`
+- `test/review-regressions.test.ts`
 - `task-8-report.md`
 
 Excluded from staging and preserved as-is:
@@ -74,6 +77,20 @@ Notes:
 - Refreshed `pnpm-lock.yaml`
 - PNPM warned that build scripts for `esbuild` were ignored unless explicitly approved
 
+## Round 1 Review Fixes
+
+1. Root command resolution
+
+- Root `test`, `build`, and `typecheck` scripts now use Corepack-pinned pnpm for workspace delegation.
+- Root `test` and `test:e2e` invoke repository-local `.bin` executables through `scripts/run-local-bin.mjs`, avoiding Windows `pnpm exec` command lookup failures.
+- `test/review-regressions.test.ts` verifies both local runner resolutions with executable smoke checks.
+
+2. Vite dependency mismatch
+
+- The web workspace was pinned from Vite `^8.2.1` to Vite `7.3.6`, and `@vitejs/plugin-react` was aligned to `^5.0.4`.
+- Vite `8.2.1` in the original install was missing its package `misc/true.js` conditional-export target; Vite `7.3.6` includes the target and loads the existing config without weakening E2E coverage.
+- The same regression test imports Vite from the web workspace and fails if the dependency cannot load.
+
 ## Guard Verification
 
 1. Clean repository pass
@@ -126,22 +143,22 @@ No forbidden socket transports found.
 
 ## Bounded Verification Runs
 
-1. Root build script
+1. Focused review regressions
 
 Command:
 
 ```powershell
-corepack pnpm build
+& .\node_modules\.bin\vitest.CMD run test/review-regressions.test.ts test/no-sockets.test.ts --config vitest.config.mjs
 ```
 
 Result:
 
 ```text
-packages/protocol build$ tsc -p tsconfig.json
-Error: spawn EPERM
+Test Files  2 passed (2)
+Tests  6 passed (6)
 ```
 
-2. Root test script
+2. Root unit/integration test script
 
 Command:
 
@@ -152,26 +169,80 @@ corepack pnpm test
 Result:
 
 ```text
-failed to load config from D:\Projects\scrum-poker\vitest.config.mjs
-Error: spawn EPERM
+Test Files  22 passed (22)
+Tests  98 passed (98)
 ```
 
-3. Focused Playwright room-flow verification outside the sandbox
+3. Workspace typecheck
 
 Command:
 
 ```powershell
-corepack pnpm test:e2e -- --grep "creator and participants complete a private round over HTTP and EventSource only"
+corepack pnpm typecheck
 ```
 
 Result:
 
 ```text
-failed to load config from D:\Projects\scrum-poker\apps\web\vite.config.ts
-Error [ERR_MODULE_NOT_FOUND]: Cannot find module '...vite\misc\true.js'
+packages/protocol typecheck: Done
+apps/server typecheck: Done
+apps/web typecheck: Done
 ```
 
-4. Earlier focused Playwright verification attempts
+4. Workspace build
+
+Command:
+
+```powershell
+corepack pnpm build
+```
+
+Result:
+
+```text
+packages/protocol build: Done
+apps/server build: Done
+apps/web build: Done
+vite v7.3.6 building client environment for production...
+```
+
+5. Playwright command resolution/listing
+
+Command:
+
+```powershell
+corepack pnpm test:e2e -- --list
+```
+
+Result:
+
+```text
+Running 4 tests using 1 worker
+3 failed
+1 did not run
+```
+
+The command now resolves the local Playwright binary and reaches browser launch. It is blocked only because Chromium is not installed:
+
+```text
+browserType.launch: Executable doesn't exist at C:\Users\Admin\AppData\Local\ms-playwright\chromium_headless_shell-1234\chrome-headless-shell-win64\chrome-headless-shell.exe
+```
+
+6. Guard
+
+Command:
+
+```powershell
+node scripts/no-sockets.mjs
+```
+
+Result:
+
+```text
+No forbidden socket transports found.
+```
+
+7. Earlier bounded verification attempts
 
 Commands:
 
@@ -189,27 +260,28 @@ Observed pre-browser harness failures before the final bounded run:
 
 1. Playwright/browser limitation
 
-- The current checkout fails before any browser journey executes because Vite cannot load `apps/web/vite.config.ts`.
-- The exact failure on August 19, 2026 was:
+- Vite configuration loading and web build now pass.
+- The Playwright command reaches browser launch, but the acceptance suite cannot execute because the Chromium binary is not installed in the environment.
+- The exact bounded failure on August 20, 2026 was:
 
 ```text
-Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'D:\Projects\scrum-poker\node_modules\.pnpm\vite@8.2.1_@types+node@22.20.1_esbuild@0.28.2_jiti@2.7.0\node_modules\vite\misc\true.js'
+browserType.launch: Executable doesn't exist at C:\Users\Admin\AppData\Local\ms-playwright\chromium_headless_shell-1234\chrome-headless-shell-win64\chrome-headless-shell.exe
 ```
 
-- Because the web build fails before preview startup, the Playwright specs do not reach browser actions, SSE assertions, axe analysis, or Chromium launch.
+- The three browser tests that require Chromium did not reach browser actions, SSE assertions, or axe analysis; one restart-expiry test was not run because the shared browser setup failed first.
 
 2. Root test/build limitation
 
-- In the managed sandbox, `corepack pnpm build` and `corepack pnpm test` fail with `spawn EPERM` while starting helper processes on Windows.
-- Outside the sandbox, focused Playwright runs proceed further, but still stop at the Vite module-resolution failure above.
+- The bounded outside-sandbox test, typecheck, and build commands pass. Earlier managed-sandbox `spawn EPERM` results remain historical environment limitations, not current source failures.
 
 3. Browser installation
 
-- `corepack pnpm exec playwright install chromium` was not run during this bounded closeout because the current Playwright path fails before browser launch at Vite config load time.
+- `corepack pnpm exec playwright install chromium` was not run during this bounded closeout; browser download is the remaining prerequisite for full E2E execution.
 
 ## Changed Files
 
 - `package.json`
+- `apps/web/package.json`
 - `pnpm-lock.yaml`
 - `playwright.config.ts`
 - `e2e/room-flow.spec.ts`
@@ -217,9 +289,13 @@ Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'D:\Projects\scrum-poker\node_m
 - `e2e/accessibility.spec.ts`
 - `scripts/assert-no-sockets.mjs`
 - `scripts/no-sockets.mjs`
+- `scripts/run-local-bin.mjs`
 - `test/no-sockets.test.ts`
+- `test/review-regressions.test.ts`
 - `task-8-report.md`
 
 ## Commit
 
-Commit hash: recorded in the final response after creating the required Git commit.
+Task 8 implementation commit: `d8c53087dccc474534ffcf861f085b402a56db7c`
+
+Round 1 review fix commit: recorded in the final handoff after commit creation.

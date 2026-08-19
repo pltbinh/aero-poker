@@ -62,12 +62,8 @@ describe("no-socket guard", () => {
 
     const violations = await scanWorkspaceRoot(root);
 
-    expect(violations).toContain(
-      expect.stringContaining("apps\\web\\src\\socket-client.ts"),
-    );
-    expect(violations).toContain(
-      expect.stringContaining("new\\s+WebSocket\\s*\\("),
-    );
+    expect(violations.some((violation) => violation.includes(join("apps", "web", "src", "socket-client.ts")))).toBe(true);
+    expect(violations.some((violation) => violation.includes("new\\s+WebSocket\\s*\\("))).toBe(true);
   });
 
   it("ignores forbidden phrases inside excluded plan and spec documentation", async () => {
