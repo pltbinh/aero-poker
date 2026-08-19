@@ -5,6 +5,7 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "baseUrl": "../../",
     "paths": {
+      "@/*": ["apps/web/src/*"],
       "@scrum-poker/protocol": ["packages/protocol/src/index.ts"]
     }
   },
