@@ -13,5 +13,6 @@ export default defineWorkspace([
       },
     },
   },
+  "apps/server/vitest.config.mjs",
   "packages/protocol/vitest.config.mjs",
 ]);
