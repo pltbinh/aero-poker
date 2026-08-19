@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Build a lightweight Scrum Poker web application for anonymous teams. A facilitator creates a temporary room, shares its link, and controls reveal and reset. Participants vote in real time without accounts, persistent history, WebSockets, or a database.
+Build a lightweight Scrum Poker web application for anonymous teams. A facilitator creates a temporary room, shares its link, and controls reveal and reset. Participants vote in real time without accounts, persistent history, WebSockets, Socket.IO, or a database.
 
-The first release prioritizes a friendly interface, correct hidden-vote behavior, simple operations, and strict protection of the Google Cloud free-tier egress allowance.
+The first release prioritizes a friendly interface, correct hidden-vote behavior, simple operations, and conservative protection of its share of the Google Cloud free-tier egress allowance. Because the VM also hosts another public service, application-level controls cannot guarantee the account-wide allowance is never exceeded.
 
 ## Product Scope
 
@@ -17,10 +17,10 @@ The first release prioritizes a friendly interface, correct hidden-vote behavior
 - One creator/facilitator who exclusively reveals and resets votes.
 - Creator authority and participant identity restored after refresh in the same browser.
 - Hidden votes until reveal, with vote changes allowed before reveal.
-- Real-time server-to-client synchronization with Server-Sent Events (SSE) and HTTP POST actions.
+- Real-time server-to-client synchronization exclusively with Server-Sent Events (SSE) and ordinary HTTP requests. WebSockets and Socket.IO are prohibited.
 - Responsive light and dark themes for phone and desktop browsers.
 - In-memory rooms removed after one hour without meaningful activity.
-- Cloudflare Pages frontend hosting and a single-process Express backend on the existing GCP VM.
+- GitHub Pages frontend hosting and an isolated, single-process Express backend sharing the existing GCP VM.
 
 ### Excluded
 
@@ -29,6 +29,7 @@ The first release prioritizes a friendly interface, correct hidden-vote behavior
 - Creator handoff, multiple facilitators, spectators, or participant removal.
 - Configurable decks, timers, chat, issue-tracker integrations, or vote averages.
 - Horizontal scaling or PM2 cluster mode.
+- WebSocket or Socket.IO packages, endpoints, client connections, Nginx upgrade rules, or fallback transports.
 
 ## Technology and Repository Structure
 
@@ -44,7 +45,7 @@ deploy/         Nginx, PM2, bandwidth guard, and deployment scripts
 docs/           Operations and architecture documentation
 ```
 
-The frontend uses React, Vite, Tailwind CSS, shadcn/ui components, and Lucide icons. The backend uses Express and runs as exactly one PM2 process because room state is local to one Node.js process. The protocol package exposes readable TypeScript types and confines minified wire keys to explicit encode/decode functions.
+The frontend uses React, Vite, Tailwind CSS, shadcn/ui components, and Lucide icons. The backend uses Express and runs as exactly one PM2 process because room state is local to one Node.js process. The protocol package exposes readable TypeScript types and confines minified wire keys to explicit encode/decode functions. Dependency checks reject `socket.io`, `socket.io-client`, `ws`, and other WebSocket transports in this project.
 
 ## Domain Model
 
@@ -77,7 +78,7 @@ Participant names must be unique within a room after trimming and case normaliza
 
 Creation returns a participant token and a separate facilitator token. Joining returns only a participant token. Each bearer token contains 256 cryptographically random bits encoded as unpadded base64url. The server keeps only SHA-256 token hashes and compares hashes with a timing-safe operation.
 
-The browser stores credentials under the room ID in local storage. A shared link contains only the room ID. Loading a known room restores the saved participant seat. A different browser joins as a regular participant and cannot recover facilitator authority from the room URL.
+The browser stores credentials under the room ID in local storage. A shared link contains only the room ID in a hash route such as `#/room/<roomId>`. Loading a known room restores the saved participant seat. A different browser joins as a regular participant and cannot recover facilitator authority from the room URL.
 
 ## API
 
@@ -198,13 +199,13 @@ The API uses stable error codes including:
 
 The frontend maps these codes to friendly guidance and never displays stack traces. Server logs exclude bearer tokens, facilitator tokens, stream tickets, and request query strings for the stream route.
 
-CORS permits only configured frontend origins. Rate limits use a one-minute sliding window: 10 room creations per IP, 30 joins per IP, 40 joins per room, 120 vote/reveal/reset actions per participant, and 20 stream tickets per participant. The process accepts at most 1,000 active rooms and 500 simultaneous SSE connections; excess requests return `SERVICE_UNAVAILABLE`. Responses set defensive headers, and Nginx accepts only HTTPS traffic forwarded to the loopback-bound Node.js process.
+CORS permits only configured frontend origins. For a GitHub project page, the production origin is `https://<github-owner>.github.io`; the repository path is not part of the browser origin. Rate limits use a one-minute sliding window: 10 room creations per IP, 30 joins per IP, 40 joins per room, 120 vote/reveal/reset actions per participant, and 20 stream tickets per participant. Because the VM already hosts another application, the Scrum Poker process initially accepts at most 250 active rooms and 100 simultaneous SSE connections; excess requests return `SERVICE_UNAVAILABLE`. Responses set defensive headers, and Nginx accepts only HTTPS traffic forwarded to the loopback-bound Node.js process.
 
 ## User Experience
 
 ### Landing screen
 
-The landing screen asks for a display name and offers two clear actions: create a room or join with a room code. A shared room URL opens the join flow with the code already populated.
+The landing screen asks for a display name and offers two clear actions: create a room or join with a room code. A shared hash-route room URL opens the join flow with the code already populated. Hash routing ensures direct room links work on GitHub Pages without server rewrite support.
 
 ### Room screen
 
@@ -226,23 +227,35 @@ Use a warm indigo and teal palette on soft neutral surfaces, rounded panels, rea
 
 All interactive controls are keyboard operable and have visible focus states. Status never depends on color alone. Voting cards expose their value and selected state to assistive technology. Motion respects `prefers-reduced-motion`. Phone and desktop layouts are first-class acceptance targets.
 
-## Deployment and Bandwidth Protection
+## Deployment, Coexistence, and Bandwidth Protection
 
 ### Frontend
 
-Cloudflare Pages builds `apps/web` with pnpm and publishes its `dist` directory. Static assets use content hashes and long-lived cache headers. SPA fallback serves the application shell for room URLs. The production build receives the API base URL through validated build-time configuration.
+GitHub Actions builds `apps/web` with pnpm and publishes its `dist` directory to GitHub Pages. For a project page at `https://<github-owner>.github.io/<repository>/`, Vite's base path is `/<repository>/`; for a custom Pages domain it is `/`. The app uses hash routing, so a room link remains valid when opened directly without a rewrite rule. Static assets use content hashes. The production build receives the Pages base path, public site URL, and API base URL through validated build-time configuration.
 
 ### Backend
 
-The Express server runs as one PM2 process on the existing GCP Compute Engine VM and binds only to loopback. Nginx terminates the origin connection and proxies the API. Cloudflare proxies the public API hostname.
+The Express server shares the existing GCP Compute Engine VM with the separately deployed `keothom` application. Scrum Poker uses these isolated defaults:
 
-For the SSE route, Nginx disables proxy buffering, caching, and compression and uses a 75-second proxy read timeout. The Express response supplies `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`. Deployment is not accepted until an SSE connection remains live for five minutes through the real Cloudflare hostname and receives heartbeat comments plus at least one room mutation.
+- Application directory: `/opt/scrum-poker` rather than `/opt/keothom`.
+- PM2 process: `scrum-poker-backend` rather than `keothom-backend` or `keothom-frontend`.
+- Loopback port: `4100` rather than the occupied backend port `4000` or frontend port `4174`.
+- Public API hostname: `poker-api.keothom24.com`, handled by its own Nginx server block and certificate.
+- Nginx site files: `/etc/nginx/sites-available/scrum-poker` and `/etc/nginx/sites-enabled/scrum-poker`; the existing `keothom` site is not overwritten.
+
+The Scrum Poker deploy script treats Node.js 20, Nginx, Certbot, and PM2 as existing shared prerequisites. It does not reinstall them, change firewall rules, stop Nginx, modify `/opt/keothom`, modify `/var/lib/keothom`, or restart either existing PM2 process. It runs pnpm through Corepack, builds the TypeScript backend, checks that port 4100 is not owned by an unrelated process, installs only the new Nginx site, runs `nginx -t`, and reloads Nginx only after validation succeeds. PM2 starts the compiled backend with a `256M` memory restart ceiling and saves the combined PM2 process list.
+
+TLS provisioning for `poker-api.keothom24.com` uses a distinct certificate and the existing `/var/www/letsencrypt` webroot. It must not stop Nginx or replace the certificate currently serving `keothom24.com` and `www.keothom24.com`.
+
+For the SSE route, the dedicated Nginx server block proxies ordinary HTTP/1.1 to port 4100, disables proxy buffering, caching, and compression, and uses a 75-second proxy read timeout. It contains no `Upgrade` header, `/socket.io/` location, or other WebSocket configuration. The Express response supplies `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`. Deployment is not accepted until an SSE connection remains live for five minutes through the real Cloudflare hostname and receives heartbeat comments plus at least one room mutation.
 
 ### Egress controls
 
 The deployment assumes an eligible `e2-micro` in `us-west1`, `us-central1`, or `us-east1` and verifies the current Google Cloud Free Tier before rollout. Static files never traverse the VM. Room snapshots use compact wire keys, mutation-only broadcasts, and 30-second comment heartbeats. Hidden tabs disconnect.
 
-`vnstat` tracks monthly bytes transmitted by the VM interface. A root-owned cron guard checks usage every five minutes and, at 900,000,000 transmitted bytes in the current calendar month, stops the PM2 backend and activates a small static maintenance response in Nginx. This is a conservative local safety switch, not an exact representation of billable GCP egress. Operations also configure Google Cloud budget notifications at 50%, 80%, and 90% of a US$1 monthly budget and inspect billing reports because free-tier terms and billable routing may change.
+`vnstat` tracks monthly bytes transmitted by the shared VM interface, including both Scrum Poker and the existing `keothom` services. A root-owned cron guard checks usage every five minutes and refuses to start or stops `scrum-poker-backend` when total current-calendar-month transmitted bytes reach 900,000,000. It activates a small static maintenance response only for `poker-api.keothom24.com`; it never stops or rewrites the existing application.
+
+This guard limits Scrum Poker after the shared VM approaches the threshold, but it cannot guarantee account-wide egress remains below 1 GB because `keothom` continues serving traffic and `vnstat` does not equal GCP billable egress. A true VM-wide hard stop would require separate operator authorization to stop every public service. Operations therefore also configure Google Cloud budget notifications at 50%, 80%, and 90% of a US$1 monthly budget and inspect billing reports because free-tier terms and billable routing may change.
 
 ## Testing Strategy
 
@@ -254,7 +267,8 @@ The deployment assumes an eligible `e2-micro` in `us-west1`, `us-central1`, or `
 - Stream-ticket issuance, single use, and expiry.
 - Snapshot secrecy before reveal and values after reveal.
 - Wire-codec round trips and revision filtering.
-- Bandwidth-guard threshold parsing and state transitions.
+- Bandwidth-guard threshold parsing, shared-interface accounting, and Scrum-Poker-only state transitions.
+- Dependency and generated-config checks proving that this project contains no WebSocket or Socket.IO transport.
 
 ### API integration tests
 
@@ -268,7 +282,7 @@ Use Vitest, Testing Library, and user-event for restored credentials, room flows
 
 Use Playwright browser contexts for one creator and multiple participants. Verify that votes remain hidden before reveal, creator controls are exclusive, refresh restores identity, and reconnection converges on the latest revision. Run automated accessibility checks on landing, voting, and revealed states.
 
-A lightweight load test opens 20 full rooms, for 400 simultaneous SSE connections, while measuring memory and emitted bytes over five minutes. It must stay below the 500-connection ceiling, avoid connection loss, and keep process RSS below 700 MiB on the target VM. Production smoke tests cover TLS, CORS, Cloudflare proxying, five-minute SSE continuity, PM2 restart behavior, room loss messaging, and the bandwidth guard's dry-run mode.
+A lightweight load test opens five full rooms, for 100 simultaneous SSE connections, while measuring memory and emitted bytes over five minutes. It must avoid connection loss and keep Scrum Poker process RSS below 220 MiB, leaving headroom beneath the PM2 `256M` restart ceiling. Before deployment, an operator records `free -m`, `df -h`, `pm2 list`, and listening ports; deployment stops if the shared VM lacks at least 300 MiB of available memory or 1 GiB of disk space. Production smoke tests cover TLS, CORS from the GitHub Pages origin, Cloudflare proxying, five-minute SSE continuity, PM2 isolation, restart behavior, room loss messaging, and the bandwidth guard's dry-run mode.
 
 ## Acceptance Criteria
 
@@ -281,5 +295,7 @@ A lightweight load test opens 20 full rooms, for 400 simultaneous SSE connection
 - Hidden tabs close their stream and resynchronize when visible.
 - Inactive rooms expire after one hour of meaningful inactivity.
 - The interface is responsive, keyboard accessible, usable in light and dark themes, and provides non-color status cues.
-- The deployed frontend is served by Cloudflare Pages, the backend runs as one PM2 process behind Nginx and Cloudflare, and the production SSE smoke test passes.
+- The deployed frontend is served by GitHub Pages with working hash-route room links.
+- The backend runs as the isolated `scrum-poker-backend` PM2 process on port 4100 behind its own Nginx site and Cloudflare hostname; deploying or restarting it does not restart, overwrite, or reconfigure the existing `keothom` processes.
+- No Scrum Poker dependency, application code, network request, or Nginx rule uses WebSockets or Socket.IO; the production five-minute SSE smoke test passes using `EventSource` and HTTP requests only.
 - The bandwidth guard has a tested dry-run mode, stops service at 900 MB when enabled, and leaves an operator-visible maintenance response.
