@@ -20,7 +20,7 @@ function snapshotAt(revision: number): RoomSnapshot {
 }
 
 describe("roomReducer", () => {
-  it("ignores an equal or older snapshot", () => {
+  it("ignores an older snapshot", () => {
     const current: RoomConnectionState = {
       status: "connected",
       snapshot: snapshotAt(5),
@@ -28,7 +28,20 @@ describe("roomReducer", () => {
     };
 
     expect(roomReducer(current, { type: "snapshot", snapshot: snapshotAt(4) })).toBe(current);
-    expect(roomReducer(current, { type: "snapshot", snapshot: snapshotAt(5) })).toBe(current);
+  });
+
+  it("marks an equal-revision snapshot connected while retaining the current snapshot", () => {
+    const current: RoomConnectionState = {
+      status: "reconnecting",
+      snapshot: snapshotAt(5),
+      lastError: new Error("stream interrupted"),
+    };
+
+    expect(roomReducer(current, { type: "snapshot", snapshot: snapshotAt(5) })).toEqual({
+      status: "connected",
+      snapshot: current.snapshot,
+      lastError: null,
+    });
   });
 
   it("preserves the latest snapshot while transitioning into reconnecting and offline states", () => {

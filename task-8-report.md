@@ -100,6 +100,12 @@ Notes:
 - The separate restart journey remains the room-expiry test and still stops/restarts the in-memory API.
 - E2E harness builds now invoke Corepack pnpm, and the local runner preserves Windows argument boundaries for forwarded Playwright options.
 
+## Final Reducer Fix
+
+- RED: `& .\apps\web\node_modules\.bin\vitest.CMD run test/room-reducer.test.ts` produced 1 failed and 2 passed because an equal-revision snapshot left the state reconnecting with its prior error.
+- The reducer now treats only lower revisions as stale; an equal revision retains the current snapshot while setting `status: "connected"` and clearing `lastError`.
+- The reconnect E2E journey no longer uses the temporary offline participant subjourney; it verifies reconnection to the unchanged room revision directly.
+
 ## Guard Verification
 
 1. Clean repository pass
@@ -297,6 +303,43 @@ Result:
 4 passed (35.1s)
 ```
 
+10. Final reducer-fix verification
+
+Web tests:
+
+```powershell
+corepack pnpm --filter @scrum-poker/web test
+```
+
+```text
+Test Files  10 passed (10)
+Tests  42 passed (42)
+```
+
+Web typecheck and build:
+
+```powershell
+corepack pnpm --filter @scrum-poker/web typecheck
+corepack pnpm --filter @scrum-poker/web build
+```
+
+Results:
+
+```text
+typecheck: passed
+vite v7.3.6 build: passed
+```
+
+Final full Chromium acceptance:
+
+```powershell
+corepack pnpm test:e2e
+```
+
+```text
+4 passed (35.7s)
+```
+
 ## Current Limitations
 
 - No remaining Task 8 verification blocker: the full local Chromium Playwright suite, unit/integration suite, typecheck, build, and no-sockets guard all pass.
@@ -311,6 +354,8 @@ Result:
 - `e2e/room-flow.spec.ts`
 - `e2e/reconnect.spec.ts`
 - `e2e/accessibility.spec.ts`
+- `apps/web/src/room/room-reducer.ts`
+- `apps/web/test/room-reducer.test.ts`
 - `scripts/assert-no-sockets.mjs`
 - `scripts/no-sockets.mjs`
 - `scripts/run-local-bin.mjs`
@@ -323,3 +368,5 @@ Result:
 Task 8 implementation commit: `d8c53087dccc474534ffcf861f085b402a56db7c`
 
 Round 1 review fix commit: `f4b2e20` (`fix: restore Windows Task 8 verification commands`).
+
+Round 2 E2E fix commit: `fe184773e03791fbfcf4deafc062b0aad6890976` (`fix: stabilize Task 8 Chromium journeys`).

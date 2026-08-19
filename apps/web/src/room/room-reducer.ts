@@ -33,13 +33,16 @@ export function roomReducer(
         lastError: null,
       };
     case "snapshot":
-      if (state.snapshot !== null && action.snapshot.revision <= state.snapshot.revision) {
+      if (state.snapshot !== null && action.snapshot.revision < state.snapshot.revision) {
         return state;
       }
 
       return {
         status: "connected",
-        snapshot: action.snapshot,
+        snapshot:
+          state.snapshot !== null && action.snapshot.revision === state.snapshot.revision
+            ? state.snapshot
+            : action.snapshot,
         lastError: null,
       };
     case "reconnecting":

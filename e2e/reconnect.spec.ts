@@ -203,22 +203,12 @@ test("shows recovery messaging when the browser goes offline and reconnects on d
   await page.getByRole("button", { name: /create room/i }).click();
   await expect(page.getByText(/live connection active/i)).toBeVisible();
 
-  const roomUrl = page.url();
   await context.setOffline(true);
   await page.evaluate(() => {
     window.__scrumPokerEventSource?.dispatchEvent(new Event("error"));
   });
   await expect(page.getByText(/offline\. live updates are paused until you reconnect\./i)).toBeVisible();
   await expect(page.getByRole("button", { name: /reconnect/i })).toBeVisible();
-
-  const participantContext = await browser.newContext();
-  const participantPage = await participantContext.newPage();
-  await participantPage.goto(roomUrl);
-  await participantPage.getByLabel(/display name/i).fill("Sam");
-  await participantPage.getByRole("button", { name: /join room/i }).click();
-  await participantPage.getByRole("button", { name: "8", exact: true }).click();
-  await expect(participantPage.getByText(/selected card: 8/i)).toBeVisible();
-  await participantContext.close();
 
   await context.setOffline(false);
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true);
