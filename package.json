@@ -7,13 +7,15 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "test": "pnpm exec vitest run --config vitest.config.mjs && pnpm --filter @scrum-poker/protocol test && pnpm --filter @scrum-poker/server test && pnpm --filter @scrum-poker/web test",
     "typecheck": "pnpm -r typecheck",
     "lint:no-sockets": "node scripts/no-sockets.mjs",
-    "test:e2e": "node scripts/not-implemented.mjs test:e2e",
+    "test:e2e": "pnpm exec playwright test",
     "test:load": "node scripts/not-implemented.mjs test:load"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.55.0",
     "@types/node": "^22.18.0",
     "cross-env": "^10.0.0",
     "eslint": "^9.35.0",
