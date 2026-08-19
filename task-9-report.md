@@ -220,4 +220,4 @@ After interruption, confirmed no listener remained on local port `4100` and term
 
 ## Commit
 
-Fix commit: pending final amend.
+Review fix: `3c77ae5ce2759016466d48ec8fdcfdf4d7d3f0d2` (`fix: harden Task 9 stream cleanup`).
