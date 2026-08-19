@@ -8,7 +8,7 @@ const ROOT_DIR = process.cwd();
 const HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 60_000;
 const NODE_COMMAND = process.execPath;
-const PNPM_COMMAND = "pnpm";
+const PNPM_COMMAND = "corepack";
 const VITE_COMMAND = join(ROOT_DIR, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite");
 
 async function allocatePort() {
@@ -107,7 +107,7 @@ async function createEnvironment() {
   const apiUrl = `http://${HOST}:${apiPort}`;
   const webUrl = `http://${HOST}:${webPort}`;
 
-  await runCommand(PNPM_COMMAND, ["--filter", "@scrum-poker/server", "build"], {});
+  await runCommand(PNPM_COMMAND, ["pnpm", "--filter", "@scrum-poker/server", "build"], {});
   await runCommand(
     VITE_COMMAND,
     ["build", "--config", "apps/web/vite.config.ts"],
@@ -180,6 +180,10 @@ function attachNetworkCapture(page) {
   return { requests, websockets };
 }
 
+function deckCard(page, value) {
+  return page.getByRole("button", { name: String(value), exact: true });
+}
+
 test.describe.configure({ mode: "serial" });
 
 let environment;
@@ -238,8 +242,12 @@ test("creator and participants complete a private round over HTTP and EventSourc
   await expect(observerPage.getByRole("button", { name: /reveal votes/i })).toHaveCount(0);
   await expect(observerPage.getByRole("button", { name: /reset round/i })).toHaveCount(0);
 
-  await creatorPage.getByRole("button", { name: "5" }).click();
-  await participantPage.getByRole("button", { name: "8" }).click();
+  const creatorFive = deckCard(creatorPage, 5);
+  const participantEight = deckCard(participantPage, 8);
+  await expect(creatorFive).toHaveCount(1);
+  await expect(participantEight).toHaveCount(1);
+  await creatorFive.click();
+  await participantEight.click();
 
   const creatorParticipants = creatorPage.getByRole("list", { name: /participants/i });
   const participantRows = participantPage.getByRole("list", { name: /participants/i }).getByRole("listitem");

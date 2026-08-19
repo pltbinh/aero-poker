@@ -91,6 +91,15 @@ Notes:
 - Vite `8.2.1` in the original install was missing its package `misc/true.js` conditional-export target; Vite `7.3.6` includes the target and loads the existing config without weakening E2E coverage.
 - The same regression test imports Vite from the web workspace and fails if the dependency cannot load.
 
+## Round 2 Review Fixes
+
+- RED evidence from the initial Chromium run: `corepack pnpm test:e2e` produced 3 failures and 1 not-run test. Accessibility and room-flow failed because the accessible name `5` matched both `0.5` and `5`; reconnect failed because `setOffline(true)` alone left the UI at `Live connection active` and never exposed the offline cue.
+- The first deterministic offline attempt then failed at reconnect because stopping/restarting the API destroyed the in-memory room; the exact result was a timeout waiting for `Live connection active` at `e2e/reconnect.spec.ts:201`.
+- Exact card assertions now use `getByRole("button", { name, exact: true })` and assert a single matching card, avoiding the `5`/`0.5` accessible-name collision.
+- The first reconnect journey keeps the API and room alive, uses a tracked browser EventSource error while the context is offline, asserts the exact offline cue and reconnect control, then restores network and reconnects after advancing the room revision from a separate online participant.
+- The separate restart journey remains the room-expiry test and still stops/restarts the in-memory API.
+- E2E harness builds now invoke Corepack pnpm, and the local runner preserves Windows argument boundaries for forwarded Playwright options.
+
 ## Guard Verification
 
 1. Clean repository pass
@@ -206,7 +215,7 @@ apps/web build: Done
 vite v7.3.6 building client environment for production...
 ```
 
-5. Playwright command resolution/listing
+5. Historical Playwright command resolution/listing
 
 Command:
 
@@ -222,7 +231,7 @@ Running 4 tests using 1 worker
 1 did not run
 ```
 
-The command now resolves the local Playwright binary and reaches browser launch. It is blocked only because Chromium is not installed:
+This was the round-1 bounded result: the command resolved the local Playwright binary and reached browser launch, but Chromium was not yet installed:
 
 ```text
 browserType.launch: Executable doesn't exist at C:\Users\Admin\AppData\Local\ms-playwright\chromium_headless_shell-1234\chrome-headless-shell-win64\chrome-headless-shell.exe
@@ -256,27 +265,42 @@ Observed pre-browser harness failures before the final bounded run:
 - `spawn EINVAL` while the harness tried to launch workspace-scoped build commands on Windows
 - `Cannot find module 'D:\Projects\scrum-poker\apps\web\node_modules\vite\bin\vite.js'` before switching to the root-installed Vite binary
 
-## Current Limitations
+8. Round 2 targeted Chromium regressions
 
-1. Playwright/browser limitation
+Commands:
 
-- Vite configuration loading and web build now pass.
-- The Playwright command reaches browser launch, but the acceptance suite cannot execute because the Chromium binary is not installed in the environment.
-- The exact bounded failure on August 20, 2026 was:
-
-```text
-browserType.launch: Executable doesn't exist at C:\Users\Admin\AppData\Local\ms-playwright\chromium_headless_shell-1234\chrome-headless-shell-win64\chrome-headless-shell.exe
+```powershell
+corepack pnpm test:e2e -- --grep "creator and participants complete a private round over HTTP and EventSource only"
+corepack pnpm test:e2e -- --grep "landing, voting, and revealed views stay accessible on a narrow viewport"
+corepack pnpm test:e2e -- --grep "shows recovery messaging when the browser goes offline and reconnects on demand"
 ```
 
-- The three browser tests that require Chromium did not reach browser actions, SSE assertions, or axe analysis; one restart-expiry test was not run because the shared browser setup failed first.
+Results:
 
-2. Root test/build limitation
+```text
+room-flow: 1 passed
+accessibility: 1 passed
+reconnect: 1 passed
+```
 
-- The bounded outside-sandbox test, typecheck, and build commands pass. Earlier managed-sandbox `spawn EPERM` results remain historical environment limitations, not current source failures.
+9. Round 2 full Chromium acceptance
 
-3. Browser installation
+Command:
 
-- `corepack pnpm exec playwright install chromium` was not run during this bounded closeout; browser download is the remaining prerequisite for full E2E execution.
+```powershell
+corepack pnpm test:e2e
+```
+
+Result:
+
+```text
+4 passed (35.1s)
+```
+
+## Current Limitations
+
+- No remaining Task 8 verification blocker: the full local Chromium Playwright suite, unit/integration suite, typecheck, build, and no-sockets guard all pass.
+- Earlier round-1 `spawn EPERM`, Vite module-resolution, and missing-Chromium results are retained above as historical evidence only.
 
 ## Changed Files
 
@@ -298,4 +322,4 @@ browserType.launch: Executable doesn't exist at C:\Users\Admin\AppData\Local\ms-
 
 Task 8 implementation commit: `d8c53087dccc474534ffcf861f085b402a56db7c`
 
-Round 1 review fix commit: recorded in the final handoff after commit creation.
+Round 1 review fix commit: `f4b2e20` (`fix: restore Windows Task 8 verification commands`).

@@ -8,7 +8,7 @@ const ROOT_DIR = process.cwd();
 const HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 60_000;
 const NODE_COMMAND = process.execPath;
-const PNPM_COMMAND = "pnpm";
+const PNPM_COMMAND = "corepack";
 const VITE_COMMAND = join(ROOT_DIR, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite");
 
 async function allocatePort() {
@@ -108,7 +108,7 @@ async function createEnvironment() {
   const webUrl = `http://${HOST}:${webPort}`;
   let serverProcess = null;
 
-  await runCommand(PNPM_COMMAND, ["--filter", "@scrum-poker/server", "build"], {});
+  await runCommand(PNPM_COMMAND, ["pnpm", "--filter", "@scrum-poker/server", "build"], {});
   await runCommand(
     VITE_COMMAND,
     ["build", "--config", "apps/web/vite.config.ts"],
@@ -185,17 +185,48 @@ test("shows recovery messaging when the browser goes offline and reconnects on d
   const context = await browser.newContext();
   const page = await context.newPage();
 
+  await page.addInitScript(() => {
+    const NativeEventSource = window.EventSource;
+
+    class TrackedEventSource extends NativeEventSource {
+      constructor(url, eventSourceInitDict) {
+        super(url, eventSourceInitDict);
+        window.__scrumPokerEventSource = this;
+      }
+    }
+
+    window.EventSource = TrackedEventSource;
+  });
+
   await page.goto(environment.webUrl);
   await page.getByLabel(/display name/i).fill("Alex");
   await page.getByRole("button", { name: /create room/i }).click();
   await expect(page.getByText(/live connection active/i)).toBeVisible();
 
+  const roomUrl = page.url();
   await context.setOffline(true);
+  await page.evaluate(() => {
+    window.__scrumPokerEventSource?.dispatchEvent(new Event("error"));
+  });
   await expect(page.getByText(/offline\. live updates are paused until you reconnect\./i)).toBeVisible();
   await expect(page.getByRole("button", { name: /reconnect/i })).toBeVisible();
 
+  const participantContext = await browser.newContext();
+  const participantPage = await participantContext.newPage();
+  await participantPage.goto(roomUrl);
+  await participantPage.getByLabel(/display name/i).fill("Sam");
+  await participantPage.getByRole("button", { name: /join room/i }).click();
+  await participantPage.getByRole("button", { name: "8", exact: true }).click();
+  await expect(participantPage.getByText(/selected card: 8/i)).toBeVisible();
+  await participantContext.close();
+
   await context.setOffline(false);
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true);
+  const reconnectTicket = page.waitForResponse(
+    (response) => response.request().method() === "POST" && /\/stream-ticket$/.test(response.url()),
+  );
   await page.getByRole("button", { name: /reconnect/i }).click();
+  await expect((await reconnectTicket).status()).toBe(201);
   await expect(page.getByText(/live connection active/i)).toBeVisible();
 
   await context.close();

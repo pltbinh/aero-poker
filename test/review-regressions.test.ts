@@ -25,6 +25,14 @@ describe("round 1 review regressions", () => {
 
       expect(result.status, result.stderr || result.stdout).toBe(0);
     }
+
+    const forwardedArgs = spawnSync(process.execPath, ["scripts/run-local-bin.mjs", "playwright", "--", "--version"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+
+    expect(forwardedArgs.status, forwardedArgs.stderr || forwardedArgs.stdout).toBe(0);
   });
 
   it("loads the workspace Vite dependency without the missing misc module", () => {

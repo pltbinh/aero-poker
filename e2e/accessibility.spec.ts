@@ -9,7 +9,7 @@ const ROOT_DIR = process.cwd();
 const HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 60_000;
 const NODE_COMMAND = process.execPath;
-const PNPM_COMMAND = "pnpm";
+const PNPM_COMMAND = "corepack";
 const VITE_COMMAND = join(ROOT_DIR, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite");
 
 async function allocatePort() {
@@ -108,7 +108,7 @@ async function createEnvironment() {
   const apiUrl = `http://${HOST}:${apiPort}`;
   const webUrl = `http://${HOST}:${webPort}`;
 
-  await runCommand(PNPM_COMMAND, ["--filter", "@scrum-poker/server", "build"], {});
+  await runCommand(PNPM_COMMAND, ["pnpm", "--filter", "@scrum-poker/server", "build"], {});
   await runCommand(
     VITE_COMMAND,
     ["build", "--config", "apps/web/vite.config.ts"],
@@ -174,6 +174,10 @@ async function expectNoHorizontalOverflow(page) {
     .toBe(true);
 }
 
+function deckCard(page, value) {
+  return page.getByRole("button", { name: String(value), exact: true });
+}
+
 test.describe.configure({ mode: "serial" });
 
 let environment;
@@ -223,11 +227,15 @@ test("landing, voting, and revealed views stay accessible on a narrow viewport",
   await participantPage.getByLabel(/display name/i).fill("Sam");
   await participantPage.getByRole("button", { name: /join room/i }).click();
 
-  await creatorPage.getByRole("button", { name: "5" }).focus();
+  const creatorFive = deckCard(creatorPage, 5);
+  const participantEight = deckCard(participantPage, 8);
+  await expect(creatorFive).toHaveCount(1);
+  await expect(participantEight).toHaveCount(1);
+  await creatorFive.focus();
   await creatorPage.keyboard.press("Enter");
   await expect(creatorPage.getByText(/selected card: 5/i)).toBeVisible();
 
-  await participantPage.getByRole("button", { name: "8" }).focus();
+  await participantEight.focus();
   await participantPage.keyboard.press("Enter");
   await expect(participantPage.getByText(/selected card: 8/i)).toBeVisible();
 

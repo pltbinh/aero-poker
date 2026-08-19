@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const [, , requestedBinary, ...args] = process.argv;
@@ -11,6 +11,7 @@ if (!requestedBinary) {
 
 const checkOnly = requestedBinary === "--check";
 const binary = checkOnly ? args.shift() : requestedBinary;
+const commandArgs = args.filter((argument) => argument !== "--");
 
 if (!binary || !/^[a-z0-9._-]+$/i.test(binary)) {
   console.error("A simple local binary name is required.");
@@ -31,10 +32,27 @@ if (checkOnly) {
   process.exit(0);
 }
 
-const result = spawnSync(executable, args, {
+let command = executable;
+let spawnArgs = commandArgs;
+
+if (process.platform === "win32" && executable.toLowerCase().endsWith(".cmd")) {
+  const shim = readFileSync(executable, "utf8");
+  const entrypointReference = shim.match(/node(?:\.exe)?\s+"([^"]+\.(?:c|m)?js)"/)?.[1];
+  const entrypoint = entrypointReference?.replace(/^%~dp0/i, dirname(executable));
+
+  if (!entrypoint) {
+    console.error(`Could not resolve the Node entrypoint from ${executable}.`);
+    process.exit(1);
+  }
+
+  command = process.execPath;
+  spawnArgs = [entrypoint, ...commandArgs];
+}
+
+const result = spawnSync(command, spawnArgs, {
   cwd: process.cwd(),
   encoding: "utf8",
-  shell: process.platform === "win32",
+  shell: false,
   stdio: "inherit",
   windowsHide: true,
 });
