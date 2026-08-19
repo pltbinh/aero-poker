@@ -13,6 +13,10 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 const CLEANUP_INTERVAL_MS = 5 * 60_000;
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
+interface LoggerLike {
+  error(message: string): void;
+}
+
 export interface RunningServer {
   host: string;
   port: number;
@@ -154,12 +158,42 @@ export async function startServer(config: AppConfig): Promise<RunningServer> {
   };
 }
 
+interface RunServerMainOptions {
+  loadConfig?: () => AppConfig;
+  startServer?: (config: AppConfig) => Promise<RunningServer>;
+  logger?: LoggerLike;
+  exit?: (code: number) => void;
+}
+
+function startupFailureMessage(error: unknown): string {
+  if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") {
+    return `Server startup failed [${error.code}].`;
+  }
+
+  return "Server startup failed.";
+}
+
+export async function runServerMain(options: RunServerMainOptions = {}): Promise<void> {
+  const {
+    loadConfig: loadConfigImpl = loadConfig,
+    startServer: startServerImpl = startServer,
+    logger = console,
+    exit = (code: number) => {
+      process.exit(code);
+    },
+  } = options;
+
+  try {
+    await startServerImpl(loadConfigImpl());
+  } catch (error) {
+    logger.error(startupFailureMessage(error));
+    exit(1);
+  }
+}
+
 const entrypoint = process.argv[1];
 const isMain = entrypoint !== undefined && import.meta.url === pathToFileURL(entrypoint).href;
 
 if (isMain) {
-  void startServer(loadConfig()).catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  void runServerMain();
 }

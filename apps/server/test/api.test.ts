@@ -162,6 +162,35 @@ async function openStream(baseUrl: string, roomId: string, ticket: string): Prom
   };
 }
 
+async function connectStream(
+  baseUrl: string,
+  roomId: string,
+  ticket: string,
+): Promise<{
+  response: Response;
+  readChunk: () => Promise<string>;
+  close: () => Promise<void>;
+}> {
+  const response = await fetch(`${baseUrl}/api/rooms/${roomId}/stream?ticket=${ticket}`);
+
+  if (response.body === null) {
+    throw new Error("Expected a response body");
+  }
+
+  const reader = response.body.getReader();
+
+  return {
+    response,
+    readChunk: async () => {
+      const frame = await reader.read();
+      return new TextDecoder().decode(frame.value ?? new Uint8Array());
+    },
+    close: async () => {
+      await reader.cancel();
+    },
+  };
+}
+
 const openContexts = new Set<TestContext>();
 
 afterEach(async () => {
@@ -631,6 +660,67 @@ describe("createApp", () => {
     expect(stream.response.headers.get("connection")).toBe("keep-alive");
     expect(stream.response.headers.get("x-accel-buffering")).toBe("no");
     expect(stream.chunk).toBe(`event: snapshot\ndata: ${JSON.stringify(expectedSnapshot)}\n\n`);
+  });
+
+  it("publishes personalized complete snapshots to open streams after an accepted mutation", async () => {
+    const context = await createTestContext();
+    openContexts.add(context);
+
+    const created = await requestJson(context.baseUrl, "/api/rooms", {
+      method: "POST",
+      json: { displayName: "Alex" },
+    });
+    const creator = created.body as { roomId: string; participantToken: string };
+    const joined = await requestJson(context.baseUrl, `/api/rooms/${creator.roomId}/join`, {
+      method: "POST",
+      json: { displayName: "Sam" },
+    });
+    const participantToken = (joined.body as { participantToken: string }).participantToken;
+
+    const creatorTicketResponse = await requestJson(context.baseUrl, `/api/rooms/${creator.roomId}/stream-ticket`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${creator.participantToken}`,
+      },
+    });
+    const participantTicketResponse = await requestJson(context.baseUrl, `/api/rooms/${creator.roomId}/stream-ticket`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${participantToken}`,
+      },
+    });
+
+    const creatorStream = await connectStream(
+      context.baseUrl,
+      creator.roomId,
+      (creatorTicketResponse.body as { ticket: string }).ticket,
+    );
+    const participantStream = await connectStream(
+      context.baseUrl,
+      creator.roomId,
+      (participantTicketResponse.body as { ticket: string }).ticket,
+    );
+
+    await creatorStream.readChunk();
+    await participantStream.readChunk();
+
+    await requestJson(context.baseUrl, `/api/rooms/${creator.roomId}/join`, {
+      method: "POST",
+      json: { displayName: "Taylor" },
+    });
+
+    const creatorUpdate = await creatorStream.readChunk();
+    const participantUpdate = await participantStream.readChunk();
+    const expectedCreatorSnapshot = encodeSnapshot(context.rooms.snapshotFor(creator.roomId, creator.participantToken));
+    const expectedParticipantSnapshot = encodeSnapshot(context.rooms.snapshotFor(creator.roomId, participantToken));
+
+    expect(creatorUpdate).toBe(`event: snapshot\ndata: ${JSON.stringify(expectedCreatorSnapshot)}\n\n`);
+    expect(participantUpdate).toBe(`event: snapshot\ndata: ${JSON.stringify(expectedParticipantSnapshot)}\n\n`);
+    expect(expectedCreatorSnapshot.s).not.toBe(expectedParticipantSnapshot.s);
+    expect(expectedCreatorSnapshot.u).toEqual(expectedParticipantSnapshot.u);
+
+    await creatorStream.close();
+    await participantStream.close();
   });
 
   it("enforces per-key rate limits for creations, joins, actions, and stream tickets", async () => {

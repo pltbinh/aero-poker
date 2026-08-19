@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RoomStore } from "../src/rooms/room-store.js";
 import { SseHub } from "../src/streams/sse-hub.js";
 import { StreamTicketStore } from "../src/streams/stream-tickets.js";
-import { startServer } from "../src/index.js";
+import * as serverModule from "../src/index.js";
 
 interface TestConfig {
   nodeEnv: "development" | "test" | "production";
@@ -58,7 +58,7 @@ describe("startServer", () => {
     const roomSweepSpy = vi.spyOn(RoomStore.prototype, "sweepExpired").mockReturnValue(["expired-room"]);
     const ticketSweepSpy = vi.spyOn(StreamTicketStore.prototype, "sweepExpired").mockReturnValue(2);
 
-    const running = await startServer(config);
+    const running = await serverModule.startServer(config);
     cleanups.add(() => running.shutdown());
 
     await vi.advanceTimersByTimeAsync(30_000);
@@ -75,7 +75,7 @@ describe("startServer", () => {
     cleanups.add(cleanup);
 
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => code as never) as never);
-    const running = await startServer(config);
+    const running = await serverModule.startServer(config);
     cleanups.add(() => running.shutdown());
 
     const created = await fetch(`${running.url}/api/rooms`, {
@@ -115,7 +115,7 @@ describe("startServer", () => {
     cleanups.add(cleanup);
 
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => code as never) as never);
-    const running = await startServer(config);
+    const running = await serverModule.startServer(config);
     cleanups.add(() => running.shutdown());
 
     const socket = net.createConnection({
@@ -138,7 +138,7 @@ describe("startServer", () => {
     cleanups.add(cleanup);
     await writeFile(config.egressDisabledFile, "disabled", "utf8");
 
-    const running = await startServer(config);
+    const running = await serverModule.startServer(config);
     cleanups.add(() => running.shutdown());
 
     const response = await fetch(`${running.url}/health/ready`);
@@ -148,5 +148,50 @@ describe("startServer", () => {
       code: "SERVICE_UNAVAILABLE",
       message: expect.any(String),
     });
+  });
+
+  it("logs startup failures without printing raw error details or stack traces", async () => {
+    const safeLogs: string[] = [];
+    const runServerMain = (serverModule as {
+      runServerMain?: (options: {
+        loadConfig: () => TestConfig;
+        startServer: (config: TestConfig) => Promise<unknown>;
+        logger: { error: (message: string) => void };
+        exit: (code: number) => void;
+      }) => Promise<void>;
+    }).runServerMain;
+
+    expect(runServerMain).toBeTypeOf("function");
+
+    const startupError = new Error("bind exploded");
+    startupError.stack = "Error: bind exploded\n    at verySecretPath";
+    (startupError as NodeJS.ErrnoException).code = "EADDRINUSE";
+    const exitCodes: number[] = [];
+
+    await runServerMain?.({
+      loadConfig: () => ({
+        nodeEnv: "test",
+        host: "127.0.0.1",
+        port: 4100,
+        corsOrigins: [],
+        egressDisabledFile: "disabled",
+      }),
+      startServer: async () => {
+        throw startupError;
+      },
+      logger: {
+        error: (message: string) => {
+          safeLogs.push(message);
+        },
+      },
+      exit: (code: number) => {
+        exitCodes.push(code);
+      },
+    });
+
+    expect(exitCodes).toEqual([1]);
+    expect(safeLogs).toEqual(["Server startup failed [EADDRINUSE]."]);
+    expect(safeLogs.join("\n")).not.toContain("bind exploded");
+    expect(safeLogs.join("\n")).not.toContain("verySecretPath");
   });
 });

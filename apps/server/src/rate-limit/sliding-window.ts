@@ -11,6 +11,8 @@ export class SlidingWindowRateLimiter {
   ) {}
 
   consume(key: string, limit: number): void {
+    this.pruneExpiredBuckets();
+
     const currentTime = this.now();
     const bucket = this.buckets.get(key) ?? [];
     let firstValidIndex = 0;
@@ -28,5 +30,26 @@ export class SlidingWindowRateLimiter {
 
     activeEntries.push(currentTime);
     this.buckets.set(key, activeEntries);
+  }
+
+  private pruneExpiredBuckets(): void {
+    const currentTime = this.now();
+
+    for (const [key, bucket] of this.buckets.entries()) {
+      let firstValidIndex = 0;
+
+      while (firstValidIndex < bucket.length && currentTime - bucket[firstValidIndex]! >= this.windowMs) {
+        firstValidIndex += 1;
+      }
+
+      if (firstValidIndex >= bucket.length) {
+        this.buckets.delete(key);
+        continue;
+      }
+
+      if (firstValidIndex > 0) {
+        this.buckets.set(key, bucket.slice(firstValidIndex));
+      }
+    }
   }
 }
