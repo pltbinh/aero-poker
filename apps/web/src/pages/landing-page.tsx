@@ -1,7 +1,15 @@
-import { AlertCircle, ArrowRight, Plus, Users } from "lucide-react";
-import { useId, useState } from "react";
-import type { RoomApi, RoomApiError } from "../api/room-api.js";
+import { Plus, Users } from "lucide-react";
+import { displayNameSchema } from "@scrum-poker/protocol";
+import { useEffect, useId, useRef, useState } from "react";
+import { RoomApiError, type RoomApi } from "../api/room-api.js";
 import type { RoomCredentialStore } from "../auth/room-credentials.js";
+import { Alert } from "../components/ui/alert.js";
+import { Badge } from "../components/ui/badge.js";
+import { Button } from "../components/ui/button.js";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js";
+import { Input } from "../components/ui/input.js";
+import { Label } from "../components/ui/label.js";
+import { Toaster } from "../components/ui/sonner.js";
 
 interface LandingPageProps {
   api: Pick<RoomApi, "createRoom" | "joinRoom">;
@@ -20,8 +28,11 @@ function trimValue(value: string): string {
 }
 
 function isTransientError(error: unknown): boolean {
-  const code = (error as Partial<RoomApiError> | undefined)?.code;
-  return code === "SERVICE_UNAVAILABLE" || !(error instanceof Error);
+  if (!(error instanceof RoomApiError)) {
+    return true;
+  }
+
+  return error.code === "SERVICE_UNAVAILABLE";
 }
 
 function errorMessage(error: unknown): string {
@@ -38,6 +49,18 @@ function clearFieldError(errors: FieldErrors, key: keyof FieldErrors): FieldErro
   return nextErrors;
 }
 
+function validateDisplayName(name: string): string | undefined {
+  if (name.length === 0) {
+    return "Enter a display name.";
+  }
+
+  if (!displayNameSchema.safeParse(name).success) {
+    return "Display name must be 1 to 30 characters.";
+  }
+
+  return undefined;
+}
+
 export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: LandingPageProps) {
   const [displayName, setDisplayName] = useState("");
   const [roomCode, setRoomCode] = useState(initialRoomId);
@@ -51,7 +74,21 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
   const displayNameErrorId = useId();
   const roomCodeErrorId = useId();
   const formErrorId = useId();
-  const toastId = useId();
+  const seededRoomCodeRef = useRef(initialRoomId);
+
+  useEffect(() => {
+    if (initialRoomId === seededRoomCodeRef.current) {
+      return;
+    }
+
+    setRoomCode((currentRoomCode) => {
+      const shouldResync =
+        trimValue(currentRoomCode).length === 0 || currentRoomCode === seededRoomCodeRef.current;
+
+      return shouldResync ? initialRoomId : currentRoomCode;
+    });
+    seededRoomCodeRef.current = initialRoomId;
+  }, [initialRoomId]);
 
   async function handleCreate(name: string) {
     const createdRoom = await api.createRoom(name);
@@ -75,8 +112,10 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
     const nextRoomCode = trimValue(roomCode);
     const nextErrors: FieldErrors = {};
 
-    if (name.length === 0) {
-      nextErrors.displayName = "Enter a display name.";
+    const displayNameError = validateDisplayName(name);
+
+    if (displayNameError !== undefined) {
+      nextErrors.displayName = displayNameError;
     }
 
     if (intent === "join" && nextRoomCode.length === 0) {
@@ -113,9 +152,7 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
   return (
     <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
       <section className="space-y-5">
-        <span className="inline-flex w-fit items-center rounded-full bg-[var(--accent-soft)] px-3 py-1 text-sm font-medium text-[var(--accent-foreground)]">
-          Friendly room setup
-        </span>
+        <Badge>Friendly room setup</Badge>
         <div className="space-y-3">
           <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
             Estimate together without a complicated setup.
@@ -141,7 +178,7 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
         </div>
       </section>
 
-      <section className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--panel)] p-6 shadow-[var(--card-shadow)]">
+      <Card className="p-6">
         <form
           className="space-y-5"
           onSubmit={async (event) => {
@@ -154,21 +191,18 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
             await submit(intent);
           }}
         >
-          <div className="space-y-1">
-            <h2 className="text-2xl font-semibold tracking-tight">Start with your name</h2>
-            <p className="text-sm leading-6 text-[var(--muted-foreground)]">
+          <CardHeader className="space-y-1">
+            <CardTitle>Start with your name</CardTitle>
+            <CardDescription>
               Use one name field for both actions, then create a room or join an existing code.
-            </p>
-          </div>
+            </CardDescription>
+          </CardHeader>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--foreground)]" htmlFor={displayNameId}>
-              Display name
-            </label>
-            <input
+            <Label htmlFor={displayNameId}>Display name</Label>
+            <Input
               aria-describedby={fieldErrors.displayName ? displayNameErrorId : undefined}
               aria-invalid={fieldErrors.displayName !== undefined}
-              className="w-full rounded-2xl border border-[var(--input)] bg-[var(--background)] px-4 py-3 text-base text-[var(--foreground)] shadow-sm transition placeholder:text-[var(--muted-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
               disabled={pending}
               id={displayNameId}
               onChange={(event) => {
@@ -189,13 +223,11 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--foreground)]" htmlFor={roomCodeId}>
-              Room code
-            </label>
-            <input
+            <Label htmlFor={roomCodeId}>Room code</Label>
+            <Input
               aria-describedby={fieldErrors.roomCode ? roomCodeErrorId : undefined}
               aria-invalid={fieldErrors.roomCode !== undefined}
-              className="w-full rounded-2xl border border-[var(--input)] bg-[var(--background)] px-4 py-3 text-base uppercase tracking-[0.14em] text-[var(--foreground)] shadow-sm transition placeholder:text-[var(--muted-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
+              className="uppercase tracking-[0.14em]"
               disabled={pending}
               id={roomCodeId}
               onChange={(event) => {
@@ -222,60 +254,46 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
           </div>
 
           {formError ? (
-            <div
-              aria-live="polite"
-              className="rounded-2xl border border-[color:color-mix(in_srgb,var(--destructive)_24%,transparent)] bg-[color:color-mix(in_srgb,var(--destructive)_10%,var(--card))] px-4 py-3 text-sm text-[var(--foreground)]"
-              id={formErrorId}
-              role="alert"
-            >
-              <div className="flex items-start gap-3">
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-[var(--destructive)]" aria-hidden="true" />
-                <span>{formError}</span>
-              </div>
-            </div>
+            <Alert aria-live="polite" id={formErrorId}>
+              <span>{formError}</span>
+            </Alert>
           ) : null}
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <button
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-[var(--primary)] px-5 py-3 text-sm font-semibold text-[var(--primary-foreground)] shadow-sm transition hover:translate-y-[-1px] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] disabled:cursor-not-allowed disabled:opacity-60"
+            <Button
+              className="flex-1"
               disabled={pending}
               type="submit"
               value="create"
             >
               <Plus className="size-4" aria-hidden="true" />
               Create room
-            </button>
-            <button
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-[var(--card)] px-5 py-3 text-sm font-semibold text-[var(--foreground)] shadow-sm transition hover:border-[var(--ring)] hover:text-[var(--primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] disabled:cursor-not-allowed disabled:opacity-60"
+            </Button>
+            <Button
+              className="flex-1"
               disabled={pending}
               type="submit"
               value="join"
+              variant="outline"
             >
               <Users className="size-4" aria-hidden="true" />
               Join room
-            </button>
+            </Button>
           </div>
 
-          <div className="rounded-2xl bg-[var(--surface-muted)] px-4 py-3 text-sm leading-6 text-[var(--muted-foreground)]">
+          <CardContent className="rounded-2xl bg-[var(--surface-muted)] px-4 py-3 text-sm leading-6 text-[var(--muted-foreground)]">
             <span className="font-semibold text-[var(--foreground)]">Heads up:</span> room links stay in the browser hash,
             while participant and facilitator tokens remain local to this browser only.
-          </div>
+          </CardContent>
         </form>
-      </section>
+      </Card>
 
-      {toastMessage ? (
-        <div
-          aria-live="polite"
-          className="fixed bottom-4 right-4 max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--foreground)] shadow-[var(--card-shadow)]"
-          id={toastId}
-          role="status"
-        >
-          <div className="flex items-start gap-3">
-            <AlertCircle className="mt-0.5 size-4 shrink-0 text-[var(--accent)]" aria-hidden="true" />
-            <span>{toastMessage}</span>
-          </div>
-        </div>
-      ) : null}
+      <Toaster
+        message={toastMessage}
+        onDismiss={() => {
+          setToastMessage(null);
+        }}
+      />
     </div>
   );
 }

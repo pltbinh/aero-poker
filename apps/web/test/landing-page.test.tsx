@@ -116,6 +116,23 @@ describe("LandingPage", () => {
     expect(navigate).toHaveBeenCalledWith("/room/room-3");
   });
 
+  it("rejects a trimmed display name longer than thirty characters before calling the API", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    const credentials = createCredentials();
+    const navigate = vi.fn();
+
+    render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
+
+    await user.type(screen.getByLabelText(/display name/i), `  ${"A".repeat(31)}  `);
+    await user.click(screen.getByRole("button", { name: /create room/i }));
+
+    expect(screen.getByText(/display name must be 1 to 30 characters/i)).toBeInTheDocument();
+    expect(api.createRoom).not.toHaveBeenCalled();
+    expect(credentials.save).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("shows friendly API error text without navigating away", async () => {
     const user = userEvent.setup();
     const api = createApi();
@@ -135,6 +152,31 @@ describe("LandingPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/that room code was not found/i);
     expect(credentials.save).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("uses the transient toast path for system errors", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    const credentials = createCredentials();
+    const navigate = vi.fn();
+
+    vi.mocked(api.createRoom).mockRejectedValue(new Error("upstream offline"));
+
+    render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
+
+    await user.type(screen.getByLabelText(/display name/i), "Alex");
+    await user.click(screen.getByRole("button", { name: /create room/i }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/temporarily unavailable/i);
+    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(
+      () => {
+        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      },
+      {
+        timeout: 3_000,
+      },
+    );
   });
 
   it("disables controls while a create request is pending", async () => {
@@ -190,5 +232,26 @@ describe("LandingPage", () => {
       participantToken: "pt",
     });
     expect(navigate).toHaveBeenCalledWith("/room/room-enter");
+  });
+
+  it("updates the seeded room code only when the user has not edited away from it", async () => {
+    const api = createApi();
+    const credentials = createCredentials();
+    const navigate = vi.fn();
+    const { rerender } = render(
+      <LandingPage api={api} credentials={credentials} initialRoomId="room-a" navigate={navigate} />,
+    );
+
+    const roomCodeInput = screen.getByLabelText(/room code/i);
+    expect(roomCodeInput).toHaveValue("room-a");
+
+    rerender(<LandingPage api={api} credentials={credentials} initialRoomId="room-b" navigate={navigate} />);
+    expect(roomCodeInput).toHaveValue("room-b");
+
+    await userEvent.clear(roomCodeInput);
+    await userEvent.type(roomCodeInput, "custom-room");
+
+    rerender(<LandingPage api={api} credentials={credentials} initialRoomId="room-c" navigate={navigate} />);
+    expect(roomCodeInput).toHaveValue("custom-room");
   });
 });

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoomApi } from "../src/api/room-api.js";
 import type { RoomCredentialStore } from "../src/auth/room-credentials.js";
@@ -53,6 +53,25 @@ describe("App routing", () => {
 
     await waitFor(() => {
       expect(window.location.hash).toBe("#/");
+    });
+  });
+
+  it("updates the join form when the shared room hash changes while mounted", async () => {
+    window.location.hash = "#/room/room-a";
+
+    const api = createApi();
+    const credentials = createCredentials();
+    const { rerender } = render(<App api={api} credentials={credentials} />);
+
+    expect(await screen.findByLabelText(/room code/i)).toHaveValue("room-a");
+
+    await act(async () => {
+      window.location.hash = "#/room/room-b";
+      rerender(<App api={api} credentials={credentials} />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/room code/i)).toHaveValue("room-b");
     });
   });
 });
