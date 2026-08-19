@@ -6,6 +6,9 @@ class FakeSink {
   readonly writes: string[] = [];
   endCalls = 0;
   private readonly closeListeners = new Set<() => void>();
+  private closed = false;
+
+  constructor(private readonly options: { emitCloseOnEnd?: boolean } = {}) {}
 
   write(chunk: string): boolean {
     this.writes.push(chunk);
@@ -14,6 +17,10 @@ class FakeSink {
 
   end(): void {
     this.endCalls += 1;
+
+    if (this.options.emitCloseOnEnd) {
+      this.close();
+    }
   }
 
   on(event: "close", listener: () => void): void {
@@ -23,6 +30,12 @@ class FakeSink {
   }
 
   close(): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
+
     for (const listener of this.closeListeners) {
       listener();
     }
@@ -103,6 +116,26 @@ describe("SseHub", () => {
     const overflowSink = new FakeSink();
 
     expect(() => hub.connect("overflow", "p101", overflowSink, createSnapshot("p101"))).toThrowError(
+      expect.objectContaining({ code: "SERVICE_UNAVAILABLE" }),
+    );
+    expect(overflowSink.writes).toEqual([]);
+  });
+
+  it("does not undercount capacity when end triggers the close listener", () => {
+    const hub = new SseHub();
+    const expiringSink = new FakeSink({ emitCloseOnEnd: true });
+    hub.connect("expiring-room", "p-expiring", expiringSink, createSnapshot("p-expiring"));
+
+    for (let index = 0; index < 99; index += 1) {
+      hub.connect(`room-${index}`, `p${index}`, new FakeSink(), createSnapshot(`p${index}`));
+    }
+
+    hub.closeRoom("expiring-room");
+    hub.connect("replacement-room", "p-replacement", new FakeSink(), createSnapshot("p-replacement"));
+
+    const overflowSink = new FakeSink();
+
+    expect(() => hub.connect("overflow", "p-overflow", overflowSink, createSnapshot("p-overflow"))).toThrowError(
       expect.objectContaining({ code: "SERVICE_UNAVAILABLE" }),
     );
     expect(overflowSink.writes).toEqual([]);

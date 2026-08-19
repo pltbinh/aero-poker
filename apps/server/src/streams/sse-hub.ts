@@ -31,20 +31,8 @@ export class SseHub {
 
     const roomClients = this.getOrCreateRoomClients(roomId);
     const connection: ClientConnection = { participantId, sink };
-    let closed = false;
-
     const cleanup = () => {
-      if (closed) {
-        return;
-      }
-
-      closed = true;
-      roomClients.delete(connection);
-      this.openStreams -= 1;
-
-      if (roomClients.size === 0) {
-        this.clientsByRoomId.delete(roomId);
-      }
+      this.removeConnection(roomId, connection);
     };
 
     roomClients.add(connection);
