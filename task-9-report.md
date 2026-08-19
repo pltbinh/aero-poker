@@ -216,10 +216,10 @@ After the local smoke, confirmed the test server was isolated to `127.0.0.1:4100
 ## Limitations
 
 1. The production five-minute PM2/RSS observation was not run; it requires explicit production approval and remains documentation-only.
-2. The build logs surface the existing engine warning because some workspace commands use Node `v24.19.0`/pnpm `11.19.0` while the repo declares Node `>=20 <21`.
 
 ## Commits
 
 - Implementation: `abb9578` (`test: add shared VM SSE capacity gate`)
 - Review fix: `3c77ae5` (`fix: harden Task 9 stream cleanup`)
 - Report correction: `ac6a36b` (`docs: record Task 9 review fix`)
+- Final report evidence: `861b44d` (`docs: correct Task 9 smoke evidence`)
