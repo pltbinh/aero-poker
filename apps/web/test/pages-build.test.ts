@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { createElement } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,11 +13,14 @@ import { App } from "../src/app.js";
 const testDir = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(testDir, "..");
 const repoRoot = resolve(testDir, "..", "..", "..");
-const distIndexPath = resolve(webRoot, "dist", "index.html");
+const distDir = resolve(webRoot, "dist");
+const distIndexPath = resolve(distDir, "index.html");
 const pagesBasePath = "/scrum-poker/";
 const apiBaseUrl = "https://poker-api.keothom24.com";
 
 function buildWebApp(basePath: string) {
+  rmSync(distDir, { recursive: true, force: true });
+
   return spawnSync("corepack pnpm --filter @scrum-poker/web build", [], {
     cwd: repoRoot,
     encoding: "utf8",
@@ -81,8 +84,14 @@ afterEach(() => {
 describe("GitHub Pages build", () => {
   it("builds the web artifact under /scrum-poker/ without filesystem path leaks", () => {
     const html = readBuiltIndexHtml();
-    const stylesheets = extractUrls(html, /<link[^>]*href="([^"]+\.css)"[^>]*>/g);
-    const scripts = extractUrls(html, /<script[^>]*type="module"[^>]*src="([^"]+\.js)"[^>]*>/g);
+    const stylesheets = extractUrls(
+      html,
+      /<link[^>]*href="([^"]+\.css)"[^>]*>/g,
+    );
+    const scripts = extractUrls(
+      html,
+      /<script[^>]*type="module"[^>]*src="([^"]+\.js)"[^>]*>/g,
+    );
 
     expect(stylesheets.length).toBeGreaterThan(0);
     expect(scripts.length).toBeGreaterThan(0);
@@ -94,14 +103,21 @@ describe("GitHub Pages build", () => {
 
     for (const assetUrl of [...stylesheets, ...scripts]) {
       expect(assetUrl.startsWith(pagesBasePath)).toBe(true);
-      expect(existsSync(resolve(webRoot, "dist", assetUrl.replace(pagesBasePath, "")))).toBe(true);
+      expect(
+        existsSync(resolve(distDir, assetUrl.replace(pagesBasePath, ""))),
+      ).toBe(true);
     }
   }, 20000);
 
   it("restores a shared room from a GitHub Pages hash route", async () => {
     window.location.href = "https://owner.github.io/scrum-poker/#/room/abc";
 
-    render(createElement(App, { api: createApi(), credentials: createCredentials() }));
+    render(
+      createElement(App, {
+        api: createApi(),
+        credentials: createCredentials(),
+      }),
+    );
 
     expect(await screen.findByLabelText(/room code/i)).toHaveValue("abc");
   });

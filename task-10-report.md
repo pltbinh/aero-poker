@@ -160,4 +160,4 @@ Workflow behavior validated in source:
 ## Commit
 
 - Commit message: `ci: deploy frontend to GitHub Pages`
-- Exact commit hash: recorded after commit creation in Git metadata and reported alongside this task handoff
+- Exact implementation commit hash: `06b6724b50f7a286e0ecab522b111d0e54ff2487`
