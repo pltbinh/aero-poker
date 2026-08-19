@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RoomSnapshot } from "@scrum-poker/protocol";
-import type { RoomApi } from "../src/api/room-api.js";
+import { RoomApiError, type RoomApi } from "../src/api/room-api.js";
 import type { RoomCredentialStore, RoomCredentials } from "../src/auth/room-credentials.js";
 import type { UseRoomConnectionResult } from "../src/room/use-room-connection.js";
 import { RoomPage } from "../src/pages/room-page.js";
@@ -246,4 +246,44 @@ describe("RoomPage", () => {
 
     expect(api.reset).toHaveBeenCalledWith("room-1", "participant-token", "facilitator-token");
   });
+
+  it.each(["vote", "reveal", "reset"] as const)(
+    "clears stored credentials when the %s action reports ROOM_NOT_FOUND",
+    async (action) => {
+      const user = userEvent.setup();
+      const credentials = createCredentials({
+        participantToken: "participant-token",
+        facilitatorToken: "facilitator-token",
+      });
+      const api = createApi();
+      const error = new RoomApiError("ROOM_NOT_FOUND", 404, "That room no longer exists.");
+
+      if (action === "vote") {
+        api.vote = vi.fn().mockRejectedValue(error);
+      } else if (action === "reveal") {
+        api.reveal = vi.fn().mockRejectedValue(error);
+      } else {
+        api.reset = vi.fn().mockRejectedValue(error);
+      }
+
+      renderRoomPage({
+        api,
+        credentials,
+        connection: createConnection(action === "reset" ? revealedSnapshot() : votingSnapshot()),
+      });
+
+      if (action === "vote") {
+        await user.click(screen.getByRole("button", { name: "8" }));
+      } else if (action === "reveal") {
+        await user.click(screen.getByRole("button", { name: /reveal votes/i }));
+      } else {
+        await user.click(screen.getByRole("button", { name: /reset round/i }));
+      }
+
+      await waitFor(() => {
+        expect(credentials.remove).toHaveBeenCalledWith("room-1");
+      });
+      expect(screen.getByRole("heading", { name: /room expired/i })).toBeInTheDocument();
+    },
+  );
 });

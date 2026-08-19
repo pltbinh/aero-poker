@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { RoomApi } from "../api/room-api.js";
+import { RoomApiError, type RoomApi } from "../api/room-api.js";
 import type { RoomCredentialStore, RoomCredentials } from "../auth/room-credentials.js";
 import { ConnectionStatus } from "../components/connection-status.js";
 import { FacilitatorControls } from "../components/facilitator-controls.js";
@@ -53,6 +53,20 @@ function activeMutationError(intent: "vote" | "reveal" | "reset"): string {
   }
 
   return "We couldn't reset the round. Please try again.";
+}
+
+function handleMutationError(
+  error: unknown,
+  intent: "vote" | "reveal" | "reset",
+  onExpired: () => void,
+  setMutationError: (message: string) => void,
+): void {
+  if (error instanceof RoomApiError && error.code === "ROOM_NOT_FOUND") {
+    onExpired();
+    return;
+  }
+
+  setMutationError(activeMutationError(intent));
 }
 
 function ExpiredRoomCard({ navigate }: Pick<RoomPageProps, "navigate">) {
@@ -130,8 +144,8 @@ function ActiveRoomPage({
     try {
       await api.vote(roomId, storedCredentials.participantToken, value);
       setSelectedValue(value);
-    } catch {
-      setMutationError(activeMutationError("vote"));
+    } catch (error) {
+      handleMutationError(error, "vote", onExpired, setMutationError);
     } finally {
       setPendingVoteValue(null);
     }
@@ -147,8 +161,8 @@ function ActiveRoomPage({
 
     try {
       await api.reveal(roomId, storedCredentials.participantToken, storedCredentials.facilitatorToken);
-    } catch {
-      setMutationError(activeMutationError("reveal"));
+    } catch (error) {
+      handleMutationError(error, "reveal", onExpired, setMutationError);
     } finally {
       setPendingReveal(false);
     }
@@ -164,8 +178,8 @@ function ActiveRoomPage({
 
     try {
       await api.reset(roomId, storedCredentials.participantToken, storedCredentials.facilitatorToken);
-    } catch {
-      setMutationError(activeMutationError("reset"));
+    } catch (error) {
+      handleMutationError(error, "reset", onExpired, setMutationError);
     } finally {
       setPendingReset(false);
     }
