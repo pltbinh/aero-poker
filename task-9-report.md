@@ -200,24 +200,26 @@ Attempted smoke command:
 node scripts/run-local-bin.mjs start-server-and-test "corepack pnpm --filter @scrum-poker/server start:test" http://127.0.0.1:4100/health/ready "corepack pnpm test:load -- --base-url=http://127.0.0.1:4100 --duration-seconds=30"
 ```
 
-The local server became ready and `/health/ready` returned HTTP `200`, but the 30-second runner did not complete before the bounded wait was interrupted. The exact remaining bootstrap failure was:
+Result:
 
 ```text
-Error: Cannot find module '@scrum-poker/protocol'
-Require stack: D:\Projects\scrum-poker\.task-9-load-build\load\sse-load.js
+Completed SSE load check: clients=100, initialSnapshots=100, rooms=5/5, disconnects=0, bytes=479100, durationMs=30476.
+clients=100/100, initialSnapshots=100, completedRooms=5/5, unexpectedDisconnects=0, receivedBytes=479100, durationMs=30476
 ```
 
-The root workspace had no `node_modules/@scrum-poker/protocol` link. This is a local bootstrap/module-resolution limitation, not production evidence.
+The local server returned HTTP `200` from `/health/ready`, and the runner shut down cleanly after the smoke check.
 
 ## Cleanup performed
 
-After interruption, confirmed no listener remained on local port `4100` and terminated stale local Vite preview helper processes. No production or remote load action was performed.
+After the local smoke, confirmed the test server was isolated to `127.0.0.1:4100` and cleaned up. No production or remote load action was performed.
 
 ## Limitations
 
 1. The production five-minute PM2/RSS observation was not run; it requires explicit production approval and remains documentation-only.
 2. The build logs surface the existing engine warning because some workspace commands use Node `v24.19.0`/pnpm `11.19.0` while the repo declares Node `>=20 <21`.
 
-## Commit
+## Commits
 
-Review fix: `3c77ae5ce2759016466d48ec8fdcfdf4d7d3f0d2` (`fix: harden Task 9 stream cleanup`).
+- Implementation: `abb9578` (`test: add shared VM SSE capacity gate`)
+- Review fix: `3c77ae5` (`fix: harden Task 9 stream cleanup`)
+- Report correction: `ac6a36b` (`docs: record Task 9 review fix`)
