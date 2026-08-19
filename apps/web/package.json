@@ -1,0 +1,20 @@
+{
+  "name": "@scrum-poker/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@scrum-poker/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "happy-dom": "^20.11.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}
