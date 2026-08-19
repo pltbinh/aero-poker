@@ -152,3 +152,58 @@ Build:
   - expired rate-limit bucket eviction
   - one-minute window rollover
   - personalized complete SSE snapshots after accepted API mutations
+
+## Fix round 2
+
+Base commit reviewed: `3865b047be166d11126099081d0e790011b4a9e0`
+
+### Additional RED evidence
+
+Focused sliding-window regression run before implementation:
+
+```text
+RUN  v3.2.7 D:/Projects/scrum-poker/apps/server
+
+❯ test/sliding-window.test.ts (3 tests | 1 failed)
+× SlidingWindowRateLimiter > does not sweep every request but performs periodic cleanup
+  AssertionError: expected 1 to be +0
+  at test/sliding-window.test.ts:72:31
+```
+
+The failure demonstrated that the existing implementation performed one full-map scan on the ordinary second consume, before the cadence-aware implementation existed.
+
+### Additional GREEN evidence
+
+Focused Task 4 suites:
+
+```text
+RUN  v3.2.7 D:/Projects/scrum-poker/apps/server
+✓ test/api.test.ts (8 tests)
+✓ test/lifecycle.test.ts (5 tests)
+✓ test/sliding-window.test.ts (3 tests)
+✓ test/sse-hub.test.ts (8 tests)
+Test Files  4 passed (4)
+Tests  24 passed (24)
+```
+
+Typecheck:
+
+```text
+> @scrum-poker/server@0.0.0 typecheck D:\Projects\scrum-poker\apps\server
+> tsc -p tsconfig.json --noEmit
+```
+
+Build:
+
+```text
+> @scrum-poker/server@0.0.0 build D:\Projects\scrum-poker\apps\server
+> pnpm --filter @scrum-poker/protocol build && tsc -p tsconfig.build.json
+```
+
+Both commands exited successfully. The build retained the existing warning that the active Node runtime is `v24.19.0` while the repository engine target is `>=20 <21`.
+
+### Fix-round changes
+
+- Changed `SlidingWindowRateLimiter.consume()` to prune only the requested key on every request.
+- Added a global stale-key sweep no more than once per configured window, preserving expired-bucket eviction without making normal requests O(all tracked keys).
+- Added a focused test that counts map scans on ordinary requests and verifies expired keys are removed when the cleanup cadence is reached.
