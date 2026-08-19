@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm --filter @scrum-poker/protocol build && tsc -p tsconfig.build.json",
+    "start:test": "pnpm build && cross-env NODE_ENV=production HOST=127.0.0.1 PORT=4100 CORS_ORIGINS=http://127.0.0.1 EGRESS_DISABLED_FILE=.task-9-egress-disabled node dist/index.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

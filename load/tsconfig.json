@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "../.task-9-load-build",
+    "baseUrl": "..",
+    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@scrum-poker/protocol": ["packages/protocol/dist/index.d.ts"]
+    }
+  },
+  "include": ["./sse-load.ts"]
+}

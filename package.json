@@ -11,7 +11,7 @@
     "typecheck": "corepack pnpm -r typecheck",
     "lint:no-sockets": "node scripts/no-sockets.mjs",
     "test:e2e": "node scripts/run-local-bin.mjs playwright test",
-    "test:load": "node scripts/not-implemented.mjs test:load"
+    "test:load": "corepack pnpm --filter @scrum-poker/protocol build && node scripts/run-local-bin.mjs tsc -p load/tsconfig.json && node scripts/run-local-bin.mjs cross-env NODE_PATH=apps/server/node_modules node .task-9-load-build/load/sse-load.js"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",

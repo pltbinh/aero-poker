@@ -37,7 +37,7 @@ let spawnArgs = commandArgs;
 
 if (process.platform === "win32" && executable.toLowerCase().endsWith(".cmd")) {
   const shim = readFileSync(executable, "utf8");
-  const entrypointReference = shim.match(/node(?:\.exe)?\s+"([^"]+\.(?:c|m)?js)"/)?.[1];
+  const entrypointReference = shim.match(/node(?:\.exe)?\s+"([^"]+)"/)?.[1];
   const entrypoint = entrypointReference?.replace(/^%~dp0/i, dirname(executable));
 
   if (!entrypoint) {
