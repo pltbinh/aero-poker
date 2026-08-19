@@ -223,3 +223,4 @@ After the local smoke, confirmed the test server was isolated to `127.0.0.1:4100
 - Review fix: `3c77ae5` (`fix: harden Task 9 stream cleanup`)
 - Report correction: `ac6a36b` (`docs: record Task 9 review fix`)
 - Final report evidence: `861b44d` (`docs: correct Task 9 smoke evidence`)
+- Report finalization: `a3ec8d0` (`docs: finalize Task 9 report`)
