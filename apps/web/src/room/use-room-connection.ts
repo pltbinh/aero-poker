@@ -23,6 +23,16 @@ interface EventSourceLike {
   close(): void;
 }
 
+interface SourceListener {
+  type: string;
+  listener: (event: { data: string }) => void;
+}
+
+interface SourceRegistration {
+  source: EventSourceLike;
+  listeners: SourceListener[];
+}
+
 interface UseRoomConnectionOptions {
   roomId: string;
   participantToken: string;
@@ -81,7 +91,7 @@ function isHidden(documentLike: VisibilityDocumentLike | undefined): boolean {
 
 export function useRoomConnection(options: UseRoomConnectionOptions): UseRoomConnectionResult {
   const [state, dispatch] = useReducer(roomReducer, initialRoomConnectionState);
-  const sourceRef = useRef<EventSourceLike | null>(null);
+  const sourceRef = useRef<SourceRegistration | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const teardownRef = useRef(false);
@@ -101,7 +111,17 @@ export function useRoomConnection(options: UseRoomConnectionOptions): UseRoomCon
   }, []);
 
   const closeSource = useCallback(() => {
-    sourceRef.current?.close();
+    const registration = sourceRef.current;
+
+    if (registration === null) {
+      return;
+    }
+
+    for (const { type, listener } of registration.listeners) {
+      registration.source.removeEventListener(type, listener);
+    }
+
+    registration.source.close();
     sourceRef.current = null;
   }, []);
 
@@ -147,20 +167,22 @@ export function useRoomConnection(options: UseRoomConnectionOptions): UseRoomCon
       }
 
       const source = eventSourceFactory(buildStreamUrl(options.apiBaseUrl, options.roomId, ticket));
-      sourceRef.current = source;
 
       const handleSnapshot = (event: { data: string }) => {
-        reconnectAttemptsRef.current = 0;
-        dispatch({
-          type: "snapshot",
-          snapshot: decodeSnapshot(JSON.parse(event.data)),
-        });
+        try {
+          const snapshot = decodeSnapshot(JSON.parse(event.data));
+          reconnectAttemptsRef.current = 0;
+          dispatch({ type: "snapshot", snapshot });
+        } catch (error) {
+          closeSource();
+          scheduleReconnect(error, "reconnecting");
+        }
       };
-      const handleError = () => {
+      const handleError = (_event: { data: string }) => {
         closeSource();
         scheduleReconnect(new Error("The room connection was interrupted."), "reconnecting");
       };
-      const handleExpired = () => {
+      const handleExpired = (_event: { data: string }) => {
         closeSource();
         clearRetryTimer();
         dispatch({
@@ -169,9 +191,16 @@ export function useRoomConnection(options: UseRoomConnectionOptions): UseRoomCon
         });
       };
 
-      source.addEventListener("snapshot", handleSnapshot);
-      source.addEventListener("error", handleError);
-      source.addEventListener("room-expired", handleExpired);
+      const listeners = [
+        { type: "snapshot", listener: handleSnapshot },
+        { type: "error", listener: handleError },
+        { type: "room-expired", listener: handleExpired },
+      ];
+      sourceRef.current = { source, listeners };
+
+      for (const { type, listener } of listeners) {
+        source.addEventListener(type, listener);
+      }
     } catch (error) {
       if (error instanceof RoomApiError && error.code === "ROOM_NOT_FOUND") {
         dispatch({

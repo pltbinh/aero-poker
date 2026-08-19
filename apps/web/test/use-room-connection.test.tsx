@@ -54,6 +54,10 @@ class FakeEventSource {
   static instances: FakeEventSource[] = [];
 
   readonly listeners = new Map<string, Set<(event: { data: string }) => void>>();
+  readonly removedListeners: Array<{
+    type: string;
+    listener: (event: { data: string }) => void;
+  }> = [];
   closed = false;
 
   constructor(readonly url: string) {
@@ -67,6 +71,7 @@ class FakeEventSource {
   }
 
   removeEventListener(type: string, listener: (event: { data: string }) => void): void {
+    this.removedListeners.push({ type, listener });
     this.listeners.get(type)?.delete(listener);
   }
 
@@ -79,6 +84,12 @@ class FakeEventSource {
 
     for (const listener of this.listeners.get("snapshot") ?? []) {
       listener({ data: payload });
+    }
+  }
+
+  emitRaw(data: string): void {
+    for (const listener of this.listeners.get("snapshot") ?? []) {
+      listener({ data });
     }
   }
 
@@ -209,6 +220,11 @@ describe("useRoomConnection", () => {
     });
 
     expect(FakeEventSource.instances[0]?.closed).toBe(true);
+    expect(FakeEventSource.instances[0]?.removedListeners.map(({ type }) => type)).toEqual([
+      "snapshot",
+      "error",
+      "room-expired",
+    ]);
 
     await hook.run(() => {
       visibilityDocument.setVisibility("visible");
@@ -224,6 +240,38 @@ describe("useRoomConnection", () => {
     });
 
     expect(hook.current().snapshot).toEqual(snapshotAt(2));
+
+    await hook.unmount();
+  });
+
+  it("preserves the last valid snapshot and reconnects safely after a malformed frame", async () => {
+    const api = {
+      createStreamTicket: vi
+        .fn<(_: string, __: string) => Promise<string>>()
+        .mockResolvedValueOnce("ticket-1"),
+    };
+    const hook = await mountHook({
+      roomId: "room-1",
+      participantToken: "participant-token",
+      api,
+      apiBaseUrl: "https://api.example",
+      visibilityDocument: new FakeVisibilityDocument(),
+      eventSourceFactory: (url) => new FakeEventSource(url),
+    });
+
+    await hook.run(() => {
+      FakeEventSource.instances[0]?.emitSnapshot(snapshotAt(1));
+    });
+
+    await expect(
+      hook.run(() => {
+        FakeEventSource.instances[0]?.emitRaw("{ malformed");
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(hook.current().snapshot).toEqual(snapshotAt(1));
+    expect(hook.current().status).toBe("reconnecting");
+    expect(FakeEventSource.instances[0]?.closed).toBe(true);
 
     await hook.unmount();
   });
