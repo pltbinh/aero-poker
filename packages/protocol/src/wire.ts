@@ -12,7 +12,7 @@ const wireParticipantRevealedSchema = z.tuple([
   z.string(),
   z.string(),
   z.union([z.literal(0), z.literal(1)]),
-  z.enum(VOTE_VALUES),
+  z.string(),
 ]);
 
 const wireParticipantSchema = z.union([wireParticipantBaseSchema, wireParticipantRevealedSchema]);
@@ -98,6 +98,19 @@ function decodeParticipant(tuple: WireParticipant, phase: 0 | 1): ParticipantVie
 }
 
 export function decodeSnapshot(input: unknown): RoomSnapshot {
+  if (typeof input !== "object" || input === null) {
+    throw new Error("Malformed wire snapshot");
+  }
+
+  const version = (input as { v?: unknown }).v;
+  if (version !== 1) {
+    if (version !== undefined) {
+      throw new Error(`Unsupported version: ${String(version)}`);
+    }
+
+    throw new Error("Malformed wire snapshot");
+  }
+
   const parsed = wireSnapshotSchema.safeParse(input);
 
   if (!parsed.success) {

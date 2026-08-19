@@ -9,9 +9,9 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "lint:no-sockets": "node -e \"process.exit(0)\"",
-    "test:e2e": "node -e \"process.exit(0)\"",
-    "test:load": "node -e \"process.exit(0)\""
+    "lint:no-sockets": "node scripts/no-sockets.mjs",
+    "test:e2e": "node scripts/not-implemented.mjs test:e2e",
+    "test:load": "node scripts/not-implemented.mjs test:load"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",

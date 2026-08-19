@@ -22,4 +22,37 @@ describe("compact room snapshots", () => {
       u: [["p1", "Alex", 1, "5"]],
     })).toThrow(/hidden vote/i);
   });
+
+  it("rejects unsupported snapshot versions", () => {
+    expect(() => decodeSnapshot({
+      v: 2,
+      r: "room-1",
+      q: 1,
+      s: "p1",
+      p: 1,
+      u: [],
+    })).toThrow(/unsupported version/i);
+  });
+
+  it("rejects malformed participant tuples", () => {
+    expect(() => decodeSnapshot({
+      v: 1,
+      r: "room-1",
+      q: 1,
+      s: "p1",
+      p: 1,
+      u: [["p1", "Alex"]],
+    })).toThrow(/malformed/i);
+  });
+
+  it("rejects invalid revealed vote values", () => {
+    expect(() => decodeSnapshot({
+      v: 1,
+      r: "room-1",
+      q: 1,
+      s: "p1",
+      p: 1,
+      u: [["p1", "Alex", 1, "99"]],
+    })).toThrow(/invalid deck value/i);
+  });
 });
