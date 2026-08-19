@@ -180,3 +180,98 @@ Result:
 ### Fix Commit
 
 - `e3f99a7` `fix: make repo verification honest`
+
+## Fix Round 2: Workspace Runtime Usability
+
+### Summary
+
+Fixed the remaining workspace/runtime regression by moving the protocol project behind a package-local Vitest config and restoring the workspace file to reference that config directly.
+
+This keeps `zod` declared in `packages/protocol/package.json` and makes the direct workspace-focused Vitest command resolve the protocol package from its own project root during a clean reinstall.
+
+### RED Evidence
+
+Regression check before the fix:
+
+`& '.\node_modules\.bin\vitest.cmd' run test/workspace-project.test.ts --configLoader runner --pool=threads --poolOptions.threads.singleThread`
+
+Observed failure:
+
+- expected `vitest.workspace.ts` to contain `packages/protocol/vitest.config.mjs`
+- the file still pointed at the inline `packages/protocol` project
+
+Clean reinstall before the green verification:
+
+`corepack pnpm install --force`
+
+Result:
+
+- exit `0`
+
+### GREEN Evidence
+
+Direct workspace-focused command after the fix:
+
+`& '.\node_modules\.bin\vitest.cmd' run --workspace vitest.workspace.ts packages/protocol/test/wire.test.ts --configLoader runner --pool=threads --poolOptions.threads.singleThread`
+
+Result:
+
+- `|protocol| test/wire.test.ts (5 tests)`
+- `1 passed`
+- `5 passed`
+
+Protocol package test after the fix:
+
+`corepack pnpm --filter @scrum-poker/protocol test`
+
+Result:
+
+- `|protocol| test/wire.test.ts (5 tests)`
+- `1 passed`
+- `5 passed`
+
+Protocol typecheck after the fix:
+
+`corepack pnpm --filter @scrum-poker/protocol typecheck`
+
+Result:
+
+- exit `0`
+
+Protocol build after the fix:
+
+`corepack pnpm --filter @scrum-poker/protocol build`
+
+Result:
+
+- exit `0`
+
+Regression test after the fix:
+
+`& '.\node_modules\.bin\vitest.cmd' run test/workspace-project.test.ts --configLoader runner --pool=threads --poolOptions.threads.singleThread`
+
+Result:
+
+- `1 passed`
+
+### Changed Files in Fix Round 2
+
+- `vitest.workspace.ts`
+- `packages/protocol/vitest.config.mjs`
+- `.superpowers/sdd/2026-08-19-scrum-poker/task-1-report.md`
+
+### Self-Review
+
+- The workspace file now points at a real package config instead of an inline protocol project, which matches the working direct workspace invocation.
+- `defineProject` is used in the package config, which is the Vitest-recommended shape for a project file.
+- The protocol package still owns its `zod` dependency; the fix does not weaken or remove it.
+- The focused workspace command, package test, typecheck, and build all pass after a clean reinstall.
+
+### Concerns
+
+- Vitest still emits the workspace deprecation warning on this version.
+- The workspace-level entry point remains in place for the current plan, but Vitest will want `test.projects` in a later migration.
+
+### Fix Commit
+
+- _pending_

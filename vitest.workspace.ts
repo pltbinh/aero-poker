@@ -13,17 +13,5 @@ export default defineWorkspace([
       },
     },
   },
-  {
-    test: {
-      root: "packages/protocol",
-      environment: "node",
-      include: ["test/**/*.test.ts"],
-      pool: "threads",
-      poolOptions: {
-        threads: {
-          singleThread: true,
-        },
-      },
-    },
-  },
+  "packages/protocol/vitest.config.mjs",
 ]);
