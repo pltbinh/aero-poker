@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   resolve: {
     alias: {
-      "@scrum-poker/protocol": fileURLToPath(new URL("../../packages/protocol/dist/index.js", import.meta.url)),
+      "@scrum-poker/protocol": fileURLToPath(new URL("../../packages/protocol/src/index.ts", import.meta.url)),
     },
   },
   test: {

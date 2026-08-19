@@ -125,6 +125,16 @@ describe("RoomStore", () => {
     });
   });
 
+  it("rejects reset by a non-creator", () => {
+    const store = new RoomStore();
+    const created = store.createRoom("Alex");
+    const joined = store.joinRoom(created.roomId, "Sam");
+
+    expect(() => store.reset(created.roomId, joined.participantToken, created.facilitatorToken)).toThrowError(
+      expect.objectContaining({ code: "FORBIDDEN" }),
+    );
+  });
+
   it("rejects invalid participant tokens across authenticated operations", () => {
     const store = new RoomStore();
     const created = store.createRoom("Alex");
@@ -136,6 +146,18 @@ describe("RoomStore", () => {
       expect.objectContaining({ code: "INVALID_TOKEN" }),
     );
     expect(() => store.castVote(created.roomId, "not-a-real-token", "5")).toThrowError(
+      expect.objectContaining({ code: "INVALID_TOKEN" }),
+    );
+  });
+
+  it("rejects an invalid facilitator token", () => {
+    const store = new RoomStore();
+    const created = store.createRoom("Alex");
+
+    expect(() => store.reveal(created.roomId, created.participantToken, "not-a-real-facilitator-token")).toThrowError(
+      expect.objectContaining({ code: "INVALID_TOKEN" }),
+    );
+    expect(() => store.reset(created.roomId, created.participantToken, "not-a-real-facilitator-token")).toThrowError(
       expect.objectContaining({ code: "INVALID_TOKEN" }),
     );
   });
