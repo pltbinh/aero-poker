@@ -370,3 +370,5 @@ Task 8 implementation commit: `d8c53087dccc474534ffcf861f085b402a56db7c`
 Round 1 review fix commit: `f4b2e20` (`fix: restore Windows Task 8 verification commands`).
 
 Round 2 E2E fix commit: `fe184773e03791fbfcf4deafc062b0aad6890976` (`fix: stabilize Task 8 Chromium journeys`).
+
+Final reducer fix commit: `d015669` (`fix: restore equal-revision reconnect state`).
