@@ -5,10 +5,14 @@ import type { RoomApi } from "../src/api/room-api.js";
 import type { RoomCredentialStore } from "../src/auth/room-credentials.js";
 import { App } from "../src/app.js";
 
-function createApi(): Pick<RoomApi, "createRoom" | "joinRoom"> {
+function createApi(): RoomApi {
   return {
     createRoom: vi.fn(),
     joinRoom: vi.fn(),
+    createStreamTicket: vi.fn(),
+    vote: vi.fn(),
+    reveal: vi.fn(),
+    reset: vi.fn(),
   };
 }
 

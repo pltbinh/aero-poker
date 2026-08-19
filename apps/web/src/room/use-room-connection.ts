@@ -33,7 +33,7 @@ interface SourceRegistration {
   listeners: SourceListener[];
 }
 
-interface UseRoomConnectionOptions {
+export interface UseRoomConnectionOptions {
   roomId: string;
   participantToken: string;
   api: Pick<RoomApi, "createStreamTicket">;
@@ -43,12 +43,14 @@ interface UseRoomConnectionOptions {
   eventSourceFactory?: (url: string) => EventSourceLike;
 }
 
-interface UseRoomConnectionResult {
+export interface UseRoomConnectionResult {
   snapshot: RoomConnectionState["snapshot"];
   status: RoomConnectionStatus;
   lastError: unknown;
   reconnect: () => void;
 }
+
+export type UseRoomConnectionHook = (options: UseRoomConnectionOptions) => UseRoomConnectionResult;
 
 class RoomExpiredError extends Error {
   readonly name = "RoomExpiredError";
