@@ -112,4 +112,19 @@ fi
 [[ ! -e "${PM2_LOG}" ]] || fail "missing tx data does not invoke PM2"
 pass "missing monthly tx data fails closed"
 
+write_json '{
+  "interfaces": [{
+    "traffic": {"month": [
+      {"date": {"year": 2026, "month": 8}, "tx": 900000001},
+      {"date": {"year": 2026, "month": 13}, "tx": 0}
+    ]}
+  }]
+}'
+if run_guard >"${TMP_DIR}/invalid-month.out" 2>&1; then
+  fail "invalid calendar month fails closed"
+fi
+[[ ! -e "${TMP_DIR}/egress-disabled" ]] || fail "invalid calendar month does not create the flag"
+[[ ! -e "${PM2_LOG}" ]] || fail "invalid calendar month does not invoke PM2"
+pass "invalid calendar month fails closed before newest-month selection"
+
 printf 'All egress guard fixture tests passed.\n'

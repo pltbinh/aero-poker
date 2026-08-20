@@ -36,13 +36,22 @@ if ! tx_bytes="$(printf '%s' "${vnstat_json}" | jq -er '
     else .
     end;
 
+  def calendar_month:
+    nonnegative_integer("month")
+    | if . < 1 or . > 12 then error("month must be between 1 and 12") else . end;
+
   .interfaces
   | if type != "array" or length < 1 then error("interfaces missing") else .[0] end
   | .traffic.month
   | if type != "array" or length < 1 then error("monthly traffic missing") else . end
+  | map(
+      . as $entry
+      | ($entry.date.year | nonnegative_integer("year")) as $year
+      | ($entry.date.month | calendar_month) as $month
+      | $entry + {date: {year: $year, month: $month}}
+    )
   | max_by(
-      ((.date.year | nonnegative_integer("year")) * 12)
-      + (.date.month | nonnegative_integer("month"))
+      (.date.year * 12) + .date.month
     )
   | .tx
   | nonnegative_integer("tx")

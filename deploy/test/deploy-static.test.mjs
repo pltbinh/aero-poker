@@ -13,6 +13,8 @@ const assetPaths = {
   bootstrapNginx: "deploy/nginx/scrum-poker-http.conf",
   productionNginx: "deploy/nginx/scrum-poker.conf",
   deployScript: "deploy/deploy.sh",
+  smokeSse: "deploy/scripts/smoke-sse.mjs",
+  egressGuardService: "deploy/systemd/scrum-poker-egress-guard.service",
   deployVitestConfig: "deploy/test/vitest.config.mjs",
 };
 
@@ -254,5 +256,35 @@ describe("isolated Scrum Poker deployment assets", () => {
 
     expect(indexes.every((index) => index >= 0)).toBe(true);
     expect(indexes).toEqual([...indexes].sort((left, right) => left - right));
+  });
+
+  it("accepts the vote endpoint's empty 204 response and waits for a newer SSE revision", () => {
+    const smokeSse = readAsset(assetPaths.smokeSse);
+
+    expect(smokeSse).toContain(
+      "if (statusCode === 204) {\n            resolve(undefined);\n            return;\n          }",
+    );
+    expect(smokeSse).toContain("resolve(JSON.parse(responseText));");
+
+    const voteRequestIndex = smokeSse.indexOf(
+      "await requestJson(options.baseUrl, `/api/rooms/${encodeURIComponent(roomId)}/votes`",
+    );
+    const revisionWaitIndex = smokeSse.indexOf("const votedRevision = await stream.revision;");
+
+    expect(voteRequestIndex).toBeGreaterThanOrEqual(0);
+    expect(revisionWaitIndex).toBeGreaterThan(voteRequestIndex);
+    expect(smokeSse).toContain("snapshot.q > initialRevision");
+  });
+
+  it("allows root PM2's default state/socket access without weakening AF_UNIX hardening", () => {
+    const service = readAsset(assetPaths.egressGuardService);
+
+    expect(service).toContain(
+      "# Root PM2 uses /root/.pm2 for its default state/socket; read-only preserves access without allowing home writes.",
+    );
+    expect(service).toContain("ProtectHome=read-only");
+    expect(service).not.toContain("ProtectHome=yes");
+    expect(service).toContain("User=root");
+    expect(service).toContain("RestrictAddressFamilies=AF_UNIX");
   });
 });

@@ -12,7 +12,8 @@ ExecStart=/usr/local/lib/scrum-poker/egress-guard.sh
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
-ProtectHome=yes
+# Root PM2 uses /root/.pm2 for its default state/socket; read-only preserves access without allowing home writes.
+ProtectHome=read-only
 ProtectSystem=strict
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

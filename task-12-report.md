@@ -2,10 +2,9 @@
 
 ## Scope
 
-Implemented the requested egress guard, native HTTP/SSE smoke probe, hardened
-inactive systemd timer, fixture-driven guard test, operations runbook, and this
-evidence report. No production, VM, DNS, TLS, PM2, Nginx, systemd, or network
-action was executed.
+Fixed the fresh-review findings in the Task 12 smoke probe, egress-guard
+hardening, and fixture/static regression coverage. No production, VM, network,
+PM2, Nginx, systemd, DNS, TLS, or service action was executed.
 
 Unrelated pre-existing worktree changes were preserved, including `idea.txt`,
 generated dependency/build directories, test results, and the prior Task 1
@@ -15,86 +14,65 @@ report.
 
 ### RED
 
-Command:
+Regression coverage was added before the implementation changes:
+
+- `deploy/test/deploy-static.test.mjs` asserts explicit 204 handling, continued
+  JSON parsing, newer-revision waiting, root PM2 home compatibility, and the
+  retained AF_UNIX restriction.
+- `deploy/test/egress-guard.test.sh` adds a future invalid-month fixture with a
+  valid threshold-exceeding month and requires fail-closed behavior without
+  flag creation or PM2 invocation.
+
+Safe direct static assertions run before implementation exited 1 with:
 
 ```text
-bash deploy/test/egress-guard.test.sh
+Error: RED: smoke-sse lacks explicit 204 handling
 ```
 
-Exact result before the guard existed:
-
-```text
-exit=1
-FAIL: egress guard is executable
-```
-
-The test was written before `deploy/scripts/egress-guard.sh` was added.
+The fixture suite could not execute in this Windows workspace: the Bash
+launcher was denied before the script ran, and `Get-Command jq` returned no
+command. Therefore the fixture's behavioral RED result could not be observed
+locally.
 
 ### GREEN attempt and limitation
 
-Command:
-
-```text
-bash deploy/test/egress-guard.test.sh
-```
-
-Exact result after implementation:
-
-```text
-exit=1
-FAIL: jq is available
-```
-
-The local Windows workspace has no `jq` executable, and the available WSL
-launcher was denied by the environment. The fixture suite therefore could not
-reach its behavioral assertions. This is an environment limitation, not a
-passing GREEN result; run the same command on the target Linux toolchain after
-installing the approved `jq` prerequisite. No dependency was downloaded or
-installed during this task.
-
-## Verification evidence
-
-Passed locally:
+Post-implementation checks that did execute:
 
 ```text
 bash -n deploy/scripts/egress-guard.sh                 exit=0
+bash -n deploy/test/egress-guard.test.sh              exit=0
 node --check deploy/scripts/smoke-sse.mjs              exit=0
-corepack pnpm lint:no-sockets                          exit=0
-No forbidden socket transports found.
-node deploy/scripts/smoke-sse.mjs --base-url=http://127.0.0.1:4100
-exit=1 with: refusing non-HTTPS base URL; pass --allow-http for an explicit local check
+node --check deploy/test/deploy-static.test.mjs       exit=0
+Task 12 direct static assertions passed
+git diff --check                                      exit=0
 ```
+
+The actual Vitest command was attempted but could not start because esbuild
+spawned with `EPERM`. The egress-guard fixture command was attempted but the
+Bash launcher was denied before reaching its jq prerequisite. The local guard
+suite therefore did not pass and is not claimed GREEN; no jq dependency was
+downloaded or installed.
+
+## Verification evidence
+
+- `requestJson` now resolves successful 204 responses without JSON parsing and
+  still parses JSON for room and stream-ticket responses.
+- The smoke probe awaits `stream.revision`, which resolves only when an SSE
+  snapshot has `q > initialRevision`, after the vote request.
+- The systemd guard uses `ProtectHome=read-only` because root PM2 uses its
+  default `/root/.pm2` state/socket; all other hardening,
+  including `RestrictAddressFamilies=AF_UNIX`, remains present.
+- jq validates every monthly entry's month in the inclusive range 1..12 before
+  `max_by`, so an invalid future month fails closed instead of hiding a valid
+  counter.
 
 Not run by design:
 
-- `smoke-sse.mjs` against any API, because it would make network/production
-  calls.
+- `smoke-sse.mjs` against any API or local server, because that would perform a
+  network request.
 - systemd enable/start, PM2, Nginx, DNS, TLS, vnstat collection, or VM
   commands.
-- full repository test/build/e2e commands, because the requested handoff was
-  limited to Task 12 and the worktree contains unrelated generated artifacts.
 
-## Review checklist
+## Reviewed Task 12 implementation commit
 
-- Guard parses the newest monthly `vnstat --json m 1` value with `jq` and fails
-  closed on malformed or missing data.
-- Threshold comparison is inclusive at `900000000` bytes.
-- `VNSTAT_COMMAND`, `PM2_COMMAND`, `FLAG_FILE`, `DRY_RUN`, and
-  `THRESHOLD_BYTES` are injectable.
-- Dry-run does not create the flag or invoke PM2.
-- Mutation targets only `/var/lib/scrum-poker/egress-disabled` by default and
-  only `scrum-poker-backend`; it never clears the flag.
-- Smoke probe uses native Node `http`/`https`, explicit `--allow-http` for
-  non-HTTPS URLs, unique room data, one vote, a newer revision, production
-  defaults of 300 seconds and 9 heartbeats, bounded local overrides, and
-  credential-free output.
-- Systemd files are root-owned at installation, hardened, five-minute timer
-  units, and were not enabled or started locally.
-- Runbook covers Pages/API/CORS, Cloudflare DNS/TLS, prerequisites,
-  predeploy/deploy/rollback, health/SSE/load, room loss, redacted logs, PM2/RSS,
-  vnstat/guard, US$1 budget alerts at 50/80/90%, shared-interface limits, and
-  month-boundary recovery with approval gates.
-
-## Commit hash
-
-Implementation commit hash: `84b38c41de3fd7d31283d8af6df1a4ff2d8b44c1`
+`9cef012c30950877edb00e8afd5df01408ff2966`

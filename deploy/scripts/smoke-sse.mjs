@@ -142,6 +142,11 @@ function requestJson(baseUrl, pathname, { method, token, body } = {}) {
             return;
           }
 
+          if (statusCode === 204) {
+            resolve(undefined);
+            return;
+          }
+
           try {
             resolve(JSON.parse(responseText));
           } catch {
