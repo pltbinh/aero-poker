@@ -13,6 +13,7 @@ const assetPaths = {
   bootstrapNginx: "deploy/nginx/scrum-poker-http.conf",
   productionNginx: "deploy/nginx/scrum-poker.conf",
   deployScript: "deploy/deploy.sh",
+  deployVitestConfig: "deploy/test/vitest.config.mjs",
 };
 
 function readAsset(relativePath) {
@@ -58,6 +59,8 @@ describe("isolated Scrum Poker deployment assets", () => {
   it("defines only the isolated PM2 production process", () => {
     const ecosystem = readAsset(assetPaths.ecosystem);
 
+    expect(ecosystem.match(/^    \{$/gm) ?? []).toHaveLength(1);
+    expect(ecosystem.match(/^      name: "[^"]+",$/gm) ?? []).toHaveLength(1);
     expect(ecosystem).toContain('name: "scrum-poker-backend"');
     expect(ecosystem).toContain('cwd: "/opt/scrum-poker/apps/server"');
     expect(ecosystem).toContain('script: "dist/index.js"');
@@ -129,6 +132,9 @@ describe("isolated Scrum Poker deployment assets", () => {
     expect(script).toContain("corepack pnpm test");
     expect(script).toContain("corepack pnpm lint:no-sockets");
     expect(script).toContain("corepack pnpm build");
+    expect(script).toContain(
+      "node scripts/run-local-bin.mjs vitest run --config deploy/test/vitest.config.mjs deploy/test/deploy-static.test.mjs",
+    );
     expect(script).toContain("certbot certonly");
     expect(script).toContain("--webroot");
     expect(script).toContain('-d "${API_HOSTNAME}"');
@@ -155,7 +161,7 @@ describe("isolated Scrum Poker deployment assets", () => {
     const script = readAsset(assetPaths.deployScript);
 
     expect(script).toMatch(
-      /for command_name in node pm2 nginx certbot corepack git vnstat jq/,
+      /for command_name in node pm2 nginx certbot corepack git vnstat jq ss free df awk install systemctl/,
     );
     expect(script).toContain('command -v "${command_name}"');
     expect(script).toContain("Ubuntu");
@@ -163,8 +169,12 @@ describe("isolated Scrum Poker deployment assets", () => {
     expect(script).toContain("300");
     expect(script).toContain("1048576");
     expect(script).toContain("ss -ltn");
-    expect(script).toContain('pm2 describe "$APP_NAME"');
     expect(script).toContain("pm2 jlist");
+    expect(script).toContain('readonly EXPECTED_EXEC_PATH="${SERVER_DIR}/dist/index.js"');
+    expect(script).toContain('.pm2_env.cwd == $expected_cwd');
+    expect(script).toContain('.pm2_env.pm_exec_path == $expected_exec_path');
+    expect(script).toContain('.pm2_env.status == "online"');
+    expect(script).toContain("exactly one");
     expect(script).toContain("keothom-backend");
     expect(script).toContain("keothom-frontend");
     expect(script).not.toMatch(
@@ -174,10 +184,75 @@ describe("isolated Scrum Poker deployment assets", () => {
 
   it("validates Nginx before every reload", () => {
     const script = readAsset(assetPaths.deployScript);
-    const validationIndex = script.indexOf("nginx -t");
-    const reloadIndex = script.indexOf("systemctl reload nginx");
+    const validations = [...script.matchAll(/(?:^|\n)\s*(?:as_root\s+)?nginx -t\b/g)].map(
+      (match) => match.index,
+    );
+    const reloads = [...script.matchAll(/(?:^|\n)\s*(?:as_root\s+)?systemctl reload nginx\b/g)].map(
+      (match) => match.index,
+    );
 
-    expect(validationIndex).toBeGreaterThanOrEqual(0);
-    expect(reloadIndex).toBeGreaterThan(validationIndex);
+    expect(validations).toHaveLength(2);
+    expect(reloads).toHaveLength(2);
+    expect(validations[0]).toBeLessThan(reloads[0]);
+    expect(reloads[0]).toBeLessThan(validations[1]);
+    expect(validations[1]).toBeLessThan(reloads[1]);
+  });
+
+  it("parses only the exact production environment allowlist without executing it", () => {
+    const script = readAsset(assetPaths.deployScript);
+
+    expect(script).toMatch(/parse_allowed_env\(\)/);
+    expect(script).toContain("declare -A seen");
+    expect(script).toContain("duplicate environment key");
+    expect(script).toContain("PATH|PM2_HOME");
+    expect(script).toContain("command substitution");
+    expect(script).toContain("*'$('*");
+    expect(script).toContain("*'`'*");
+    expect(script).toContain("export CORS_ORIGINS=\"${cors_origins}\"");
+    expect(script).not.toContain("set -a");
+    expect(script).not.toMatch(/(^|\s)(?:source|eval)\b/);
+    expect(script).toMatch(/\[\[ \"\$\{line\}\" != \*.*\[\[:space:\]\].*\]\]/);
+    expect(script).toMatch(/NODE_ENV\)\s*\[\[ "\$\{value\}" == "production" \]\]/);
+    expect(script).toMatch(/HOST\)\s*\[\[ "\$\{value\}" == "127\.0\.0\.1" \]\]/);
+    expect(script).toMatch(/PORT\)\s*\[\[ "\$\{value\}" == "4100" \]\]/);
+    expect(script).toMatch(/EGRESS_DISABLED_FILE\)\s*\[\[ "\$\{value\}" == "\/var\/lib\/scrum-poker\/egress-disabled" \]\]/);
+    expect(script).toContain("CORS_ORIGINS)");
+    expect(script).toContain("required environment key is missing");
+  });
+
+  it("requires a validated PM2 identity before trusting or restarting the backend", () => {
+    const script = readAsset(assetPaths.deployScript);
+    const identityStart = script.indexOf("pm2_backend_identity()");
+    const portStart = script.indexOf("check_backend_port()");
+    const stateStart = script.indexOf("capture_keothom_state()");
+    const startStart = script.indexOf("start_scrum_poker()");
+    const identityBlock = script.slice(identityStart, portStart);
+    const portBlock = script.slice(portStart, stateStart);
+    const startBlock = script.slice(startStart, script.indexOf("main()", startStart));
+
+    expect(identityStart).toBeGreaterThanOrEqual(0);
+    expect(identityBlock).toContain("pm2 jlist");
+    expect(identityBlock).toContain("[.[] | select(.name == $app_name)] | length");
+    expect(identityBlock).toContain("exactly one");
+    expect(identityBlock).toContain("wrong or offline");
+    expect(portBlock.indexOf("pm2_backend_identity")).toBeGreaterThanOrEqual(0);
+    expect(portBlock.indexOf("pm2_backend_identity")).toBeLessThan(portBlock.indexOf("ss -ltn"));
+    expect(startBlock.indexOf("pm2_backend_identity")).toBeLessThan(startBlock.indexOf('pm2 restart "$APP_NAME"'));
+    expect(startBlock).toContain("if pm2_backend_identity; then");
+    expect(script).not.toContain("pm2 describe");
+  });
+
+  it("keeps the authoritative frozen repository gate order", () => {
+    const script = readAsset(assetPaths.deployScript);
+    const commands = [
+      "corepack pnpm install --frozen-lockfile",
+      "corepack pnpm test",
+      "corepack pnpm lint:no-sockets",
+      "corepack pnpm build",
+    ];
+    const indexes = commands.map((command) => script.indexOf(command));
+
+    expect(indexes.every((index) => index >= 0)).toBe(true);
+    expect(indexes).toEqual([...indexes].sort((left, right) => left - right));
   });
 });

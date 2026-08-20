@@ -6,6 +6,7 @@ readonly APP_DIR="/opt/scrum-poker"
 readonly SERVER_DIR="${APP_DIR}/apps/server"
 readonly APP_NAME="scrum-poker-backend"
 readonly BACKEND_PORT="4100"
+readonly EXPECTED_EXEC_PATH="${SERVER_DIR}/dist/index.js"
 readonly API_HOSTNAME="poker-api.keothom24.com"
 readonly NGINX_SITE="scrum-poker"
 readonly NGINX_AVAILABLE="/etc/nginx/sites-available/${NGINX_SITE}"
@@ -37,7 +38,7 @@ require_prerequisites() {
   local missing=()
   local command_name
 
-  for command_name in node pm2 nginx certbot corepack git vnstat jq ss free df awk install; do
+  for command_name in node pm2 nginx certbot corepack git vnstat jq ss free df awk install systemctl; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
       missing+=("${command_name}")
     fi
@@ -56,16 +57,67 @@ require_prerequisites() {
 
 validate_platform() {
   [[ -r /etc/os-release ]] || die "Ubuntu/Debian release metadata is required."
-  # shellcheck disable=SC1091
-  source /etc/os-release
-  case "${ID:-}" in
+  local platform_id
+  platform_id="$(awk -F= '$1 == "ID" { gsub(/"/, "", $2); print $2; exit }' /etc/os-release)"
+  case "${platform_id}" in
     ubuntu|debian) ;;
-    *) die "Ubuntu or Debian is required; found ${ID:-unknown}." ;;
+    *) die "Ubuntu or Debian is required; found ${platform_id:-unknown}." ;;
   esac
 
   local node_major
   node_major="$(node -p 'process.versions.node.split(".")[0]')"
   [[ "${node_major}" == "20" ]] || die "Node.js major version 20 is required; found ${node_major}."
+}
+
+parse_allowed_env() {
+  local line key value required_key
+  local cors_origins=""
+  declare -A seen=()
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -z "${line}" || "${line}" == \#* ]] && continue
+    if [[ "${line}" == *'$('* || "${line}" == *'`'* || "${line}" == *'${'* ]]; then
+      die "${ENV_FILE} contains a command substitution."
+    fi
+    [[ "${line}" != *[[:space:]]* ]] || die "${ENV_FILE} must not contain whitespace in assignments."
+    [[ "${line}" =~ ^([A-Z_][A-Z0-9_]*)=([^=]+)$ ]] || die "${ENV_FILE} contains a malformed assignment."
+
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    [[ -z "${seen[${key}]+set}" ]] || die "${ENV_FILE} contains a duplicate environment key: ${key}."
+    seen["${key}"]=1
+
+    case "${key}" in
+      PATH|PM2_HOME)
+        die "${ENV_FILE} contains a forbidden process environment key: ${key}."
+        ;;
+      NODE_ENV)
+        [[ "${value}" == "production" ]] || die "${ENV_FILE} must set NODE_ENV=production."
+        ;;
+      HOST)
+        [[ "${value}" == "127.0.0.1" ]] || die "${ENV_FILE} must bind HOST=127.0.0.1."
+        ;;
+      PORT)
+        [[ "${value}" == "4100" ]] || die "${ENV_FILE} must set PORT=4100."
+        ;;
+      CORS_ORIGINS)
+        [[ "${value}" =~ ^https://[^[:space:]]+\.github\.io$ ]] || die "${ENV_FILE} must set the GitHub Pages CORS origin."
+        cors_origins="${value}"
+        ;;
+      EGRESS_DISABLED_FILE)
+        [[ "${value}" == "/var/lib/scrum-poker/egress-disabled" ]] || die "${ENV_FILE} must use the Scrum Poker maintenance flag."
+        ;;
+      *)
+        die "${ENV_FILE} contains an unknown environment key: ${key}."
+        ;;
+    esac
+  done < "${ENV_FILE}"
+
+  for required_key in NODE_ENV HOST PORT CORS_ORIGINS EGRESS_DISABLED_FILE; do
+    [[ -n "${seen[${required_key}]+set}" ]] || die "${ENV_FILE}: required environment key is missing: ${required_key}."
+  done
+
+  export CORS_ORIGINS="${cors_origins}"
 }
 
 validate_capacity() {
@@ -86,15 +138,32 @@ validate_paths_and_environment() {
   [[ -f "${PRODUCTION_NGINX_FILE}" ]] || die "the Scrum Poker production Nginx configuration is missing."
   [[ -f "${ENV_FILE}" ]] || die "create ${ENV_FILE} from apps/server/.env.example before deploying."
 
-  grep -qx 'NODE_ENV=production' "${ENV_FILE}" || die "${ENV_FILE} must set NODE_ENV=production."
-  grep -Eq '^HOST=127\.0\.0\.1$' "${ENV_FILE}" || die "${ENV_FILE} must bind HOST=127.0.0.1."
-  grep -Eq '^PORT=4100$' "${ENV_FILE}" || die "${ENV_FILE} must set PORT=4100."
-  grep -Eq '^CORS_ORIGINS=https://[^[:space:]]+\.github\.io$' "${ENV_FILE}" || die "${ENV_FILE} must set the GitHub Pages CORS origin."
-  grep -Eq '^EGRESS_DISABLED_FILE=/var/lib/scrum-poker/egress-disabled$' "${ENV_FILE}" || die "${ENV_FILE} must use the Scrum Poker maintenance flag."
+  parse_allowed_env
+}
+
+pm2_backend_identity() {
+  local pm2_state match_count
+  pm2_state="$(pm2 jlist)" || die "could not read the PM2 process list."
+  match_count="$(jq -er --arg app_name "${APP_NAME}" \
+    '[.[] | select(.name == $app_name)] | length' <<<"${pm2_state}")" || die "PM2 returned an invalid process list."
+
+  if [[ "${match_count}" == "0" ]]; then
+    return 1
+  fi
+  [[ "${match_count}" == "1" ]] || die "PM2 must contain exactly one ${APP_NAME} entry."
+
+  jq -e --arg app_name "${APP_NAME}" \
+    --arg expected_cwd "${SERVER_DIR}" \
+    --arg expected_exec_path "${EXPECTED_EXEC_PATH}" \
+    '[.[] | select(.name == $app_name)] | .[0] |
+      (.pm2_env.cwd == $expected_cwd and
+       .pm2_env.pm_exec_path == $expected_exec_path and
+       .pm2_env.status == "online")' \
+    <<<"${pm2_state}" >/dev/null || die "existing ${APP_NAME} entry is wrong or offline."
 }
 
 check_backend_port() {
-  if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+  if pm2_backend_identity; then
     return
   fi
 
@@ -137,6 +206,7 @@ run_scrum_poker_checks() {
   corepack pnpm test
   corepack pnpm lint:no-sockets
   corepack pnpm build
+  node scripts/run-local-bin.mjs vitest run --config deploy/test/vitest.config.mjs deploy/test/deploy-static.test.mjs
 }
 
 install_bootstrap_site_if_needed() {
@@ -161,14 +231,12 @@ install_production_site() {
 }
 
 start_scrum_poker() {
-  set -a
-  # shellcheck disable=SC1090
-  source "${ENV_FILE}"
-  set +a
-
-  if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+  if pm2_backend_identity; then
     pm2 restart "$APP_NAME" --update-env
   else
+    if ss -ltn | awk -v expected_port=":${BACKEND_PORT}" '$4 ~ expected_port "$" { found = 1 } END { exit found ? 0 : 1 }'; then
+      die "port ${BACKEND_PORT} became occupied before starting ${APP_NAME}."
+    fi
     pm2 start "$APP_DIR/deploy/ecosystem.config.cjs" --only "$APP_NAME" --env production
   fi
   pm2 save

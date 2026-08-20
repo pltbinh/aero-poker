@@ -2,80 +2,64 @@
 
 ## Summary
 
-Implemented the isolated Scrum Poker deployment assets only. The deployer is fixed to `scrum-poker-backend`, `/opt/scrum-poker`, loopback port `4100`, and `poker-api.keothom24.com`; it reports missing prerequisites without installing packages, validates capacity and the environment boundary, checks port ownership, runs Scrum Poker checks, validates Nginx before reload, and compares KeoThom PM2 status/restart counters without mutating those services.
+Fresh review fixes harden the existing isolated Scrum Poker deployment without changing production state. The deployer now parses `apps/server/.env` with an exact allowlist for `NODE_ENV`, `HOST`, `PORT`, `CORS_ORIGINS`, and `EGRESS_DISABLED_FILE`; rejects unknown, duplicate, malformed, whitespace-bearing, command-substitution, `PATH`, `PM2_HOME`, and wrong-value input; and exports only the validated `CORS_ORIGINS` value.
 
-No production deployment, DNS change, certificate issuance, Nginx reload, PM2 action, or publishing was executed from this checkout.
+It validates a same-name PM2 process through `pm2 jlist` and `jq` before trusting port 4100 or restarting it, requiring exactly one online entry with the expected cwd and executable path. A wrong, stale, or offline same-name entry fails closed; when no valid entry exists, `ss` must show port 4100 is free before starting.
+
+The permanent deployment Vitest config is committed and the focused deployment suite runs from `run_scrum_poker_checks` after the authoritative frozen install/test/no-socket/build gates. `systemctl` is now a required prerequisite. No deployment, Nginx reload, PM2, Certbot, DNS, or production action was executed.
 
 ## Changed files
 
-- `apps/server/.env.example`
-- `deploy/ecosystem.config.cjs`
-- `deploy/nginx/scrum-poker-http.conf`
-- `deploy/nginx/scrum-poker.conf`
 - `deploy/deploy.sh`
 - `deploy/test/deploy-static.test.mjs`
+- `deploy/test/vitest.config.mjs`
 - `task-11-report.md`
 
-Unrelated worktree changes and generated artifacts were not staged or modified by this task.
+The authoritative implementation commit `a125dbff609313ef8d16f928415c439221c94dc4` with subject `ops: isolate scrum poker on shared VM` was preserved. Unrelated worktree changes, generated artifacts, `idea.txt`, prior SDD reports/ledger, and application source were not staged.
 
 ## RED evidence
 
-Focused command, using a temporary repository-local Vitest config because the root Vitest config only includes TypeScript tests:
+Focused command through the repository-local wrapper:
 
 ```text
-node scripts/run-local-bin.mjs vitest run --config deploy/test/.vitest.config.mjs deploy/test/deploy-static.test.mjs
+node scripts/run-local-bin.mjs vitest run --config deploy/test/vitest.config.mjs deploy/test/deploy-static.test.mjs
 ```
 
-Result before deployment assets existed:
+The first Windows sandbox attempt exited `1` before test collection because Vitest's config loader could not spawn esbuild (`spawn EPERM`). Retrying the same command outside the sandbox produced the meaningful pre-fix RED result:
 
 - exit `1`
-- `1` test file failed
-- `8` tests failed
-- failures named the missing `.env.example`, PM2 config, both Nginx configs, and deploy script
-
-This was the intended RED result. The temporary config was removed after verification.
+- 1 test file failed
+- 11 tests: 5 failed, 6 passed
+- failures covered missing focused-suite invocation, missing `systemctl`, missing exact Nginx reload pairing, missing allowlisted parser, and missing PM2 identity validation
 
 ## GREEN evidence
 
-Focused command after implementation:
+Focused deployment suite after implementation:
 
 ```text
-node scripts/run-local-bin.mjs vitest run --config deploy/test/.vitest.config.mjs deploy/test/deploy-static.test.mjs
+node scripts/run-local-bin.mjs vitest run --config deploy/test/vitest.config.mjs deploy/test/deploy-static.test.mjs
 ```
 
-Result:
+Result: exit `0`; 1 file passed; 11/11 tests passed.
 
-- exit `0`
-- `1` test file passed
-- `8` tests passed
+Additional verification:
 
-The static suite asserts required-file presence, exact process/path/port/hostname constants, production environment settings, no secrets, SSE HTTP/1.1 and empty `Connection`, buffering/cache/gzip disabled, 75-second read timeout, maintenance JSON 503, ACME bootstrap behavior, Nginx validation before reload, prerequisite reporting, fixed destinations, no broad cleanup, and no socket/upgrade configuration.
+- `bash -n deploy/deploy.sh`: exit `0`
+- `node --check deploy/ecosystem.config.cjs`: exit `0`
+- `node --check deploy/test/deploy-static.test.mjs`: exit `0`
+- `node --check deploy/test/vitest.config.mjs`: exit `0`
+- `git diff --check`: exit `0`
+- `corepack pnpm lint:no-sockets`: exit `0`; `No forbidden socket transports found.`
+- `corepack pnpm test`: exit `0`; root 23 files/103 tests, protocol 5 tests, server 41 tests, and web 46 tests passed
 
-Additional verification already run:
-
-```text
-bash -n deploy/deploy.sh
-node --check deploy/ecosystem.config.cjs
-corepack pnpm lint:no-sockets
-```
-
-All exited `0`; the socket guard reported `No forbidden socket transports found.`
-
-Full checks already run before this report was written:
-
-- `corepack pnpm test`: exit `0`; root workspace `23` test files / `103` tests, protocol `5`, server `41`, and web `46` tests passed.
-- `corepack pnpm typecheck`: exit `0` for protocol, server, and web.
-- `corepack pnpm build`: exit `0` for protocol, server, and web.
+The static suite now asserts exactly one PM2 app block/name, PM2 identity fields and fail-closed behavior, `systemctl` prerequisites, parser rejection safeguards and no `source`/`eval`, permanent deployment-suite invocation, install → test → lint:no-sockets → build order, and one-to-one `nginx -t` validation before every reload.
 
 ## Limitations
 
-- The checkout is Windows-based, so the focused `.mjs` test required a temporary local Vitest config; the repository default config does not discover that file.
-- The broad Prettier check cannot infer parsers for `.env.example`, Nginx, or Bash files. JavaScript deployment files were checked/formatted with the repository-local Prettier binary.
-- The host reported Node `v24.19.0` and pnpm `11.19.0` engine warnings during build; production assets require Node 20 and PM2 as documented.
-- Nginx, Certbot, PM2, Ubuntu/Debian prerequisites, DNS, certificates, VM capacity, and production behavior were not exercised from this checkout.
+- The focused suite required an escalated Windows execution because the sandbox could not spawn Vitest's esbuild config loader.
+- The fix round did not run deployment, frozen install, or build; install/build remain in the deploy script in the authoritative order, and generated artifacts were not touched per scope.
+- Nginx, Certbot, PM2, Ubuntu/Debian prerequisites, DNS, certificates, VM capacity, and production behavior remain unexercised from this Windows checkout.
 
 ## Commit
 
-Implementation commit message: `ops: isolate scrum poker on shared VM`
-
-Implementation commit hash: `a125dbff609313ef8d16f928415c439221c94dc4`
+Fix commit subject: `fix: harden scrum poker deploy guards`
