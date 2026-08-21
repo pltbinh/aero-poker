@@ -1,4 +1,4 @@
-export const VOTE_VALUES = ["0.5", "1", "2", "3", "5", "8", "13", "21", "?", "☕"] as const;
+export const VOTE_VALUES = ["☕", "1", "2", "3", "5", "8", "13"] as const;
 
 export type VoteValue = (typeof VOTE_VALUES)[number];
 

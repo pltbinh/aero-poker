@@ -4,16 +4,15 @@ import { useEffect, useId, useRef, useState } from "react";
 import { RoomApiError, type RoomApi } from "../api/room-api.js";
 import type { RoomCredentialStore } from "../auth/room-credentials.js";
 import { Alert } from "../components/ui/alert.js";
-import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js";
+import { Card, CardHeader, CardTitle } from "../components/ui/card.js";
 import { Input } from "../components/ui/input.js";
 import { Label } from "../components/ui/label.js";
 import { Toaster } from "../components/ui/sonner.js";
 
 interface LandingPageProps {
   api: Pick<RoomApi, "createRoom" | "joinRoom">;
-  credentials: Pick<RoomCredentialStore, "save">;
+  credentials: Pick<RoomCredentialStore, "loadDisplayName" | "save" | "saveDisplayName">;
   navigate: (path: string) => void;
   initialRoomId?: string;
 }
@@ -40,7 +39,7 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
 
-  return "Something went wrong. Please try again.";
+  return "Something went sideways. Give it another go.";
 }
 
 function clearFieldError(errors: FieldErrors, key: keyof FieldErrors): FieldErrors {
@@ -51,18 +50,18 @@ function clearFieldError(errors: FieldErrors, key: keyof FieldErrors): FieldErro
 
 function validateDisplayName(name: string): string | undefined {
   if (name.length === 0) {
-    return "Enter a display name.";
+    return "Enter your name to jump in.";
   }
 
   if (!displayNameSchema.safeParse(name).success) {
-    return "Display name must be 1 to 30 characters.";
+    return "Keep your name under 30 characters.";
   }
 
   return undefined;
 }
 
 export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: LandingPageProps) {
-  const [displayName, setDisplayName] = useState("");
+  const [displayName, setDisplayName] = useState(() => credentials.loadDisplayName() ?? "");
   const [roomCode, setRoomCode] = useState(initialRoomId);
   const [pending, setPending] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -119,7 +118,7 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
     }
 
     if (intent === "join" && nextRoomCode.length === 0) {
-      nextErrors.roomCode = "Enter a room code to join.";
+      nextErrors.roomCode = "Add a room code to join the game.";
     }
 
     setFieldErrors(nextErrors);
@@ -130,6 +129,7 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
       return;
     }
 
+    credentials.saveDisplayName(name);
     setPending(true);
 
     try {
@@ -140,7 +140,7 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
       }
     } catch (error) {
       if (isTransientError(error)) {
-        setToastMessage("The service is temporarily unavailable. Please try again.");
+        setToastMessage("Aero is taking a quick breather. Try again in a moment.");
       } else {
         setFormError(errorMessage(error));
       }
@@ -150,37 +150,14 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
-      <section className="space-y-5">
-        <Badge>Friendly room setup</Badge>
-        <div className="space-y-3">
-          <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-            Estimate together without a complicated setup.
-          </h1>
-          <p className="max-w-2xl text-base leading-7 text-[var(--muted-foreground)] sm:text-lg">
-            Create a fresh planning room for your team or jump into a shared room code. The link stays clean:
-            credentials never leave local storage.
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm">
-            <p className="text-sm font-semibold text-[var(--foreground)]">Keyboard-first</p>
-            <p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">
-              Visible focus, Enter-key submit, and reduced-motion friendly transitions.
-            </p>
-          </div>
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm">
-            <p className="text-sm font-semibold text-[var(--foreground)]">Shareable hash links</p>
-            <p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">
-              Shared URLs carry only the room code, which keeps GitHub Pages routing simple and safe.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <Card className="p-6">
+    <div className="flex min-h-[calc(100vh-8rem)] items-start justify-center py-4 sm:items-center sm:py-8">
+      <Card className="relative w-full max-w-lg overflow-hidden border-2 p-6 sm:p-8">
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 top-0 h-2 bg-[linear-gradient(90deg,var(--primary),var(--accent),var(--primary))]"
+        />
         <form
-          className="space-y-5"
+          className="space-y-6"
           onSubmit={async (event) => {
             event.preventDefault();
 
@@ -191,15 +168,14 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
             await submit(intent);
           }}
         >
-          <CardHeader className="space-y-1">
-            <CardTitle>Start with your name</CardTitle>
-            <CardDescription>
-              Use one name field for both actions, then create a room or join an existing code.
-            </CardDescription>
+          <CardHeader>
+            <CardTitle className="font-[var(--font-game)] text-3xl font-black tracking-tight sm:text-4xl">
+              Ready to play?
+            </CardTitle>
           </CardHeader>
 
           <div className="space-y-2">
-            <Label htmlFor={displayNameId}>Display name</Label>
+            <Label htmlFor={displayNameId}>Your name</Label>
             <Input
               aria-describedby={fieldErrors.displayName ? displayNameErrorId : undefined}
               aria-invalid={fieldErrors.displayName !== undefined}
@@ -211,7 +187,7 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
                   setFieldErrors((current) => clearFieldError(current, "displayName"));
                 }
               }}
-              placeholder="Alex"
+              placeholder="What should we call you?"
               type="text"
               value={displayName}
             />
@@ -267,7 +243,7 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
               value="create"
             >
               <Plus className="size-4" aria-hidden="true" />
-              Create room
+              Start a room
             </Button>
             <Button
               className="flex-1"
@@ -277,14 +253,9 @@ export function LandingPage({ api, credentials, navigate, initialRoomId = "" }: 
               variant="outline"
             >
               <Users className="size-4" aria-hidden="true" />
-              Join room
+              Join the game
             </Button>
           </div>
-
-          <CardContent className="rounded-2xl bg-[var(--surface-muted)] px-4 py-3 text-sm leading-6 text-[var(--muted-foreground)]">
-            <span className="font-semibold text-[var(--foreground)]">Heads up:</span> room links stay in the browser hash,
-            while participant and facilitator tokens remain local to this browser only.
-          </CardContent>
         </form>
       </Card>
 

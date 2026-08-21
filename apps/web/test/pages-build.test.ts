@@ -64,7 +64,9 @@ function createApi(): RoomApi {
 function createCredentials(): RoomCredentialStore {
   return {
     load: vi.fn(() => null),
+    loadDisplayName: vi.fn(() => null),
     save: vi.fn(),
+    saveDisplayName: vi.fn(),
     remove: vi.fn(),
   };
 }

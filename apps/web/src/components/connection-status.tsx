@@ -9,19 +9,19 @@ interface ConnectionStatusProps {
 
 const statusCopy: Record<Exclude<RoomConnectionStatus, "expired">, { label: string; tone: string }> = {
   connecting: {
-    label: "Connecting to room updates.",
+    label: "Connecting",
     tone: "bg-[var(--secondary)] text-[var(--secondary-foreground)]",
   },
   connected: {
-    label: "Live connection active.",
+    label: "Connected",
     tone: "bg-[var(--accent-soft)] text-[var(--accent-foreground)]",
   },
   reconnecting: {
-    label: "Reconnecting to the room stream.",
+    label: "Reconnecting",
     tone: "bg-[var(--secondary)] text-[var(--secondary-foreground)]",
   },
   offline: {
-    label: "Offline. Live updates are paused until you reconnect.",
+    label: "Offline",
     tone: "bg-[color:color-mix(in_srgb,var(--destructive)_14%,var(--card))] text-[var(--foreground)]",
   },
 };
@@ -34,17 +34,18 @@ export function ConnectionStatus({ status, onReconnect }: ConnectionStatusProps)
   const content = statusCopy[status];
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex min-w-0 items-center gap-2">
       <p
         className={cn(
-          "inline-flex items-center rounded-full px-3 py-1 text-sm font-medium",
+          "inline-flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold sm:h-auto sm:w-auto sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-sm",
           content.tone,
         )}
       >
-        {content.label}
+        <span aria-hidden="true" className="size-2 rounded-full bg-current opacity-75" />
+        <span className="sr-only sm:not-sr-only">{content.label}</span>
       </p>
       {status === "offline" ? (
-        <Button onClick={onReconnect} variant="outline">
+        <Button className="px-3 py-2" onClick={onReconnect} variant="outline">
           Reconnect
         </Button>
       ) : null}

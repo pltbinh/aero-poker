@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { createRoomCredentialStore } from "../src/auth/room-credentials.js";
 
 describe("createRoomCredentialStore", () => {
+  it("stores one reusable display name separately from room credentials", () => {
+    const storage = new Map<string, string>();
+    const credentials = createRoomCredentialStore({
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => {
+        storage.set(key, value);
+      },
+      removeItem: (key) => {
+        storage.delete(key);
+      },
+    });
+
+    credentials.saveDisplayName("Alex");
+
+    expect(credentials.loadDisplayName()).toBe("Alex");
+    expect(storage.get("aero-poker:v1:display-name")).toBe("Alex");
+  });
+
   it("stores facilitator credentials under one room only", () => {
     const storage = new Map<string, string>();
     const credentials = createRoomCredentialStore({

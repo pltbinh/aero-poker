@@ -6,6 +6,7 @@ import { FacilitatorControls } from "../components/facilitator-controls.js";
 import { ParticipantList } from "../components/participant-list.js";
 import { ResultsDistribution } from "../components/results-distribution.js";
 import { ShareRoom } from "../components/share-room.js";
+import { AppHeaderActions } from "../components/app-shell.js";
 import { VoteDeck } from "../components/vote-deck.js";
 import { Alert } from "../components/ui/alert.js";
 import { Badge } from "../components/ui/badge.js";
@@ -191,32 +192,17 @@ function ActiveRoomPage({
 
   return (
     <div className="space-y-6">
-      <Card className="p-6">
-        <CardHeader className="space-y-3">
-          <Badge>Voting room</Badge>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-2">
-              <CardTitle>Room {roomId}</CardTitle>
-              <CardDescription>
-                Hidden votes stay hidden until the facilitator reveals the round.
-              </CardDescription>
-            </div>
-            <ShareRoom basePath={shareBasePath} clipboard={clipboard} origin={shareOrigin} roomId={roomId} />
-          </div>
-          <ConnectionStatus onReconnect={connection.reconnect} status={connection.status} />
-        </CardHeader>
-        {mutationError ? (
-          <CardContent className="mt-4">
-            <Alert aria-live="polite">{mutationError}</Alert>
-          </CardContent>
-        ) : null}
-      </Card>
+      <AppHeaderActions>
+        <ConnectionStatus onReconnect={connection.reconnect} status={connection.status} />
+        <ShareRoom basePath={shareBasePath} clipboard={clipboard} origin={shareOrigin} roomId={roomId} />
+      </AppHeaderActions>
 
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+      {mutationError ? <Alert aria-live="polite">{mutationError}</Alert> : null}
+
+      <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
         <Card className="p-6">
           <CardHeader className="space-y-3">
             <CardTitle>Vote deck</CardTitle>
-            <CardDescription>Pick one card. The room snapshot remains authoritative for everyone else.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <VoteDeck
@@ -241,9 +227,6 @@ function ActiveRoomPage({
         <Card className="p-6">
           <CardHeader className="space-y-3">
             <CardTitle>Participants</CardTitle>
-            <CardDescription>
-              During voting, each participant shows only whether they are waiting or voted.
-            </CardDescription>
           </CardHeader>
           <CardContent>
             {connection.snapshot === null ? (
@@ -263,7 +246,6 @@ function ActiveRoomPage({
         <Card className="p-6">
           <CardHeader className="space-y-3">
             <CardTitle>Revealed distribution</CardTitle>
-            <CardDescription>Counts are grouped by exact string value with no average calculation.</CardDescription>
           </CardHeader>
           <CardContent>
             <ResultsDistribution participants={connection.snapshot.participants} />

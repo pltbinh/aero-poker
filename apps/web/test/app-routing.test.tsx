@@ -16,10 +16,12 @@ function createApi(): RoomApi {
   };
 }
 
-function createCredentials(): RoomCredentialStore {
+function createCredentials(savedDisplayName: string | null = null): RoomCredentialStore {
   return {
     load: vi.fn(() => null),
+    loadDisplayName: vi.fn(() => savedDisplayName),
     save: vi.fn(),
+    saveDisplayName: vi.fn(),
     remove: vi.fn(),
   };
 }
@@ -37,7 +39,7 @@ describe("App routing", () => {
   it("renders the shell and restores the room code from a shared hash route", async () => {
     window.location.hash = "#/room/room-restore";
 
-    render(<App api={createApi()} credentials={createCredentials()} />);
+    render(<App api={createApi()} credentials={createCredentials("Sam")} />);
 
     expect(screen.getByRole("link", { name: /skip to main content/i })).toHaveAttribute(
       "href",
@@ -45,6 +47,7 @@ describe("App routing", () => {
     );
     expect(screen.getByRole("button", { name: /toggle theme/i })).toBeInTheDocument();
     expect(await screen.findByLabelText(/room code/i)).toHaveValue("room-restore");
+    expect(screen.getByLabelText(/your name/i)).toHaveValue("Sam");
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
   });
 
@@ -53,7 +56,7 @@ describe("App routing", () => {
 
     render(<App api={createApi()} credentials={createCredentials()} />);
 
-    expect(await screen.findByRole("heading", { name: /estimate together/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /ready to play/i })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(window.location.hash).toBe("#/");

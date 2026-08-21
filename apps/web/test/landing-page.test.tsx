@@ -17,10 +17,12 @@ function createApi(): RoomApi {
   };
 }
 
-function createCredentials(): RoomCredentialStore {
+function createCredentials(savedDisplayName: string | null = null): RoomCredentialStore {
   return {
     load: vi.fn(() => null),
+    loadDisplayName: vi.fn(() => savedDisplayName),
     save: vi.fn(),
+    saveDisplayName: vi.fn(),
     remove: vi.fn(),
   };
 }
@@ -42,6 +44,37 @@ afterEach(() => {
 });
 
 describe("LandingPage", () => {
+  it("prefills the saved browser name and remembers an edited name on submit", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    const credentials = createCredentials("Alex");
+
+    vi.mocked(api.joinRoom).mockResolvedValue({ participantToken: "pt" });
+
+    render(<LandingPage api={api} credentials={credentials} initialRoomId="room-7" navigate={vi.fn()} />);
+
+    const nameInput = screen.getByLabelText(/your name/i);
+    expect(nameInput).toHaveValue("Alex");
+
+    await user.clear(nameInput);
+    await user.type(nameInput, "  Sam  ");
+    await user.click(screen.getByRole("button", { name: /join the game/i }));
+
+    expect(credentials.saveDisplayName).toHaveBeenCalledWith("Sam");
+    expect(api.joinRoom).toHaveBeenCalledWith("room-7", "Sam");
+  });
+
+  it("shows only the friendly game setup form", () => {
+    render(<LandingPage api={createApi()} credentials={createCredentials()} navigate={vi.fn()} />);
+
+    expect(screen.getByRole("heading", { name: /ready to play/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /start a room/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /join the game/i })).toBeVisible();
+    expect(screen.queryByText(/keyboard-first/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/shareable hash links/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/heads up/i)).not.toBeInTheDocument();
+  });
+
   it("creates a room and stores both creator credentials", async () => {
     const user = userEvent.setup();
     const api = createApi();
@@ -56,8 +89,8 @@ describe("LandingPage", () => {
 
     render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
 
-    await user.type(screen.getByLabelText(/display name/i), "Alex");
-    await user.click(screen.getByRole("button", { name: /create room/i }));
+    await user.type(screen.getByLabelText(/your name/i), "Alex");
+    await user.click(screen.getByRole("button", { name: /start a room/i }));
 
     expect(api.createRoom).toHaveBeenCalledWith("Alex");
     expect(credentials.save).toHaveBeenCalledWith("room-1", {
@@ -79,9 +112,9 @@ describe("LandingPage", () => {
 
     render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
 
-    await user.type(screen.getByLabelText(/display name/i), "Sam");
+    await user.type(screen.getByLabelText(/your name/i), "Sam");
     await user.type(screen.getByLabelText(/room code/i), "room-2");
-    await user.click(screen.getByRole("button", { name: /join room/i }));
+    await user.click(screen.getByRole("button", { name: /join the game/i }));
 
     expect(api.joinRoom).toHaveBeenCalledWith("room-2", "Sam");
     expect(credentials.save).toHaveBeenCalledWith("room-2", {
@@ -98,20 +131,20 @@ describe("LandingPage", () => {
 
     render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
 
-    await user.type(screen.getByLabelText(/display name/i), "   ");
-    await user.click(screen.getByRole("button", { name: /create room/i }));
+    await user.type(screen.getByLabelText(/your name/i), "   ");
+    await user.click(screen.getByRole("button", { name: /start a room/i }));
 
-    expect(screen.getByText(/enter a display name/i)).toBeInTheDocument();
+    expect(screen.getByText(/enter your name to jump in/i)).toBeInTheDocument();
     expect(api.createRoom).not.toHaveBeenCalled();
 
-    await user.clear(screen.getByLabelText(/display name/i));
-    await user.type(screen.getByLabelText(/display name/i), "  Alex  ");
+    await user.clear(screen.getByLabelText(/your name/i));
+    await user.type(screen.getByLabelText(/your name/i), "  Alex  ");
     await user.type(screen.getByLabelText(/room code/i), "  room-3  ");
     vi.mocked(api.joinRoom).mockResolvedValue({
       participantToken: "participant-token",
     });
 
-    await user.click(screen.getByRole("button", { name: /join room/i }));
+    await user.click(screen.getByRole("button", { name: /join the game/i }));
 
     expect(api.joinRoom).toHaveBeenCalledWith("room-3", "Alex");
     expect(credentials.save).toHaveBeenCalledWith("room-3", {
@@ -128,10 +161,10 @@ describe("LandingPage", () => {
 
     render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
 
-    await user.type(screen.getByLabelText(/display name/i), `  ${"A".repeat(31)}  `);
-    await user.click(screen.getByRole("button", { name: /create room/i }));
+    await user.type(screen.getByLabelText(/your name/i), `  ${"A".repeat(31)}  `);
+    await user.click(screen.getByRole("button", { name: /start a room/i }));
 
-    expect(screen.getByText(/display name must be 1 to 30 characters/i)).toBeInTheDocument();
+    expect(screen.getByText(/keep your name under 30 characters/i)).toBeInTheDocument();
     expect(api.createRoom).not.toHaveBeenCalled();
     expect(credentials.save).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
@@ -149,9 +182,9 @@ describe("LandingPage", () => {
 
     render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
 
-    await user.type(screen.getByLabelText(/display name/i), "Sam");
+    await user.type(screen.getByLabelText(/your name/i), "Sam");
     await user.type(screen.getByLabelText(/room code/i), "missing-room");
-    await user.click(screen.getByRole("button", { name: /join room/i }));
+    await user.click(screen.getByRole("button", { name: /join the game/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/that room code was not found/i);
     expect(credentials.save).not.toHaveBeenCalled();
@@ -168,10 +201,10 @@ describe("LandingPage", () => {
 
     render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
 
-    await user.type(screen.getByLabelText(/display name/i), "Alex");
-    await user.click(screen.getByRole("button", { name: /create room/i }));
+    await user.type(screen.getByLabelText(/your name/i), "Alex");
+    await user.click(screen.getByRole("button", { name: /start a room/i }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/temporarily unavailable/i);
+    expect(await screen.findByRole("status")).toHaveTextContent(/quick breather/i);
     expect(screen.queryByRole("alert")).toBeNull();
     await waitFor(
       () => {
@@ -194,16 +227,16 @@ describe("LandingPage", () => {
 
     render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
 
-    await user.type(screen.getByLabelText(/display name/i), "Alex");
-    await user.click(screen.getByRole("button", { name: /create room/i }));
+    await user.type(screen.getByLabelText(/your name/i), "Alex");
+    await user.click(screen.getByRole("button", { name: /start a room/i }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/display name/i)).toBeDisabled();
+      expect(screen.getByLabelText(/your name/i)).toBeDisabled();
     });
 
     expect(screen.getByLabelText(/room code/i)).toBeDisabled();
-    expect(screen.getByRole("button", { name: /create room/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /join room/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /start a room/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /join the game/i })).toBeDisabled();
 
     deferred.resolve({
       roomId: "room-4",
@@ -228,7 +261,7 @@ describe("LandingPage", () => {
 
     render(<LandingPage api={api} credentials={credentials} navigate={navigate} />);
 
-    await user.type(screen.getByLabelText(/display name/i), "Sam");
+    await user.type(screen.getByLabelText(/your name/i), "Sam");
     await user.type(screen.getByLabelText(/room code/i), "room-enter{Enter}");
 
     expect(api.joinRoom).toHaveBeenCalledWith("room-enter", "Sam");

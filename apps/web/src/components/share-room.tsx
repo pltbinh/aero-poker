@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { Check, Share2 } from "lucide-react";
+import { cn } from "@/lib/utils.js";
 import { Button } from "./ui/button.js";
 import { DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog.js";
 import { Input } from "./ui/input.js";
+import { Toaster } from "./ui/sonner.js";
 
 interface ClipboardLike {
   writeText(value: string): Promise<void>;
@@ -68,23 +71,27 @@ export function ShareRoom({
     try {
       await clipboardTarget.writeText(shareUrl);
       setFallbackUrl(null);
-      setStatusMessage("Share link copied.");
+      setStatusMessage("Invite link copied — send it to your crew!");
     } catch {
       setFallbackUrl(shareUrl);
     }
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={handleCopy} variant="outline">
-          Copy share link
+    <div>
+      <div className="flex items-center gap-2">
+        <Button
+          className={cn(
+            "px-3 py-2",
+            statusMessage && "share-pop border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-foreground)]",
+          )}
+          data-copied={statusMessage ? "true" : undefined}
+          onClick={handleCopy}
+          variant="outline"
+        >
+          {statusMessage ? <Check aria-hidden="true" className="size-4" /> : <Share2 aria-hidden="true" className="size-4" />}
+          {statusMessage ? "Copied!" : "Share"}
         </Button>
-        {statusMessage ? (
-          <p className="text-sm text-[var(--muted-foreground)]" role="status">
-            {statusMessage}
-          </p>
-        ) : null}
       </div>
 
       {fallbackUrl ? (
@@ -101,6 +108,14 @@ export function ShareRoom({
           </div>
         </DialogContent>
       ) : null}
+
+      <Toaster
+        message={statusMessage}
+        onDismiss={() => {
+          setStatusMessage(null);
+        }}
+        tone="success"
+      />
     </div>
   );
 }

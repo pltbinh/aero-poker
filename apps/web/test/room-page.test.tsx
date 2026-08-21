@@ -6,6 +6,7 @@ import type { RoomSnapshot } from "@scrum-poker/protocol";
 import { RoomApiError, type RoomApi } from "../src/api/room-api.js";
 import type { RoomCredentialStore, RoomCredentials } from "../src/auth/room-credentials.js";
 import type { UseRoomConnectionResult } from "../src/room/use-room-connection.js";
+import { AppShell } from "../src/components/app-shell.js";
 import { RoomPage } from "../src/pages/room-page.js";
 
 function createApi(): RoomApi {
@@ -22,7 +23,9 @@ function createApi(): RoomApi {
 function createCredentials(loaded: RoomCredentials | null): RoomCredentialStore {
   return {
     load: vi.fn(() => loaded),
+    loadDisplayName: vi.fn(() => null),
     save: vi.fn(),
+    saveDisplayName: vi.fn(),
     remove: vi.fn(),
   };
 }
@@ -97,17 +100,19 @@ function renderRoomPage(options: {
     useConnection,
     navigate: options.navigate ?? vi.fn(),
     ...render(
-      <RoomPage
-        api={api}
-        apiBaseUrl={options.apiBaseUrl ?? "https://api.example"}
-        clipboard={options.clipboard}
-        credentials={credentials}
-        navigate={options.navigate ?? vi.fn()}
-        roomId={options.roomId ?? "room-1"}
-        shareBasePath={options.shareBasePath ?? "/scrum-poker/"}
-        shareOrigin={options.shareOrigin ?? "https://planning.example"}
-        useConnection={useConnection}
-      />,
+      <AppShell>
+        <RoomPage
+          api={api}
+          apiBaseUrl={options.apiBaseUrl ?? "https://api.example"}
+          clipboard={options.clipboard}
+          credentials={credentials}
+          navigate={options.navigate ?? vi.fn()}
+          roomId={options.roomId ?? "room-1"}
+          shareBasePath={options.shareBasePath ?? "/scrum-poker/"}
+          shareOrigin={options.shareOrigin ?? "https://planning.example"}
+          useConnection={useConnection}
+        />
+      </AppShell>,
     ),
   };
 }
@@ -117,6 +122,22 @@ afterEach(() => {
 });
 
 describe("RoomPage", () => {
+  it("places compact room actions in the navigation and omits the room identity panel", () => {
+    renderRoomPage({
+      connection: createConnection(votingSnapshot()),
+    });
+
+    const navigation = screen.getByRole("banner");
+    expect(within(navigation).getByText(/^aero poker$/i)).toBeVisible();
+    expect(within(navigation).getByRole("button", { name: /^share$/i })).toBeVisible();
+    expect(within(navigation).getByText(/^connected$/i)).toBeVisible();
+    expect(screen.queryByText(/^voting room$/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^room room-1$/i })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("main")).getByRole("heading", { name: /vote deck/i })).toBeVisible();
+    expect(screen.queryByText(/room snapshot remains authoritative/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/during voting.*participant/i)).not.toBeInTheDocument();
+  });
+
   it("shows the join form for shared rooms when this browser has no stored credentials", async () => {
     const useConnection = vi.fn();
 
@@ -126,7 +147,7 @@ describe("RoomPage", () => {
       useConnection,
     });
 
-    expect(await screen.findByRole("heading", { name: /estimate together/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /ready to play/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/room code/i)).toHaveValue("room-restore");
     expect(useConnection).not.toHaveBeenCalled();
   });
@@ -167,12 +188,13 @@ describe("RoomPage", () => {
       connection: createConnection(votingSnapshot()),
     });
 
-    await user.click(screen.getByRole("button", { name: /copy share link/i }));
+    await user.click(screen.getByRole("button", { name: /^share$/i }));
 
     expect(clipboard.writeText).toHaveBeenCalledWith("https://planning.example/scrum-poker/#/room/room-1");
     expect(clipboard.writeText.mock.calls[0]?.[0]).not.toContain("participant-token");
     expect(clipboard.writeText.mock.calls[0]?.[0]).not.toContain("facilitator-token");
-    expect(await screen.findByRole("status")).toHaveTextContent(/share link copied/i);
+    expect(await screen.findByRole("status")).toHaveTextContent(/invite link copied.*send it to your crew/i);
+    expect(within(screen.getByRole("banner")).queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("renders textual offline connection status and a reconnect action", async () => {

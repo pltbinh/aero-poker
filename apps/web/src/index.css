@@ -49,11 +49,27 @@
   --font-sans: "Segoe UI", "Helvetica Neue", sans-serif;
 }
 
+:root {
+  --font-game: "Arial Rounded MT Bold", "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
 html {
   background:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--primary) 12%, transparent) 1px, transparent 1.5px) 0 0 / 24px 24px,
     radial-gradient(circle at top left, rgba(63, 78, 184, 0.14), transparent 36%),
     radial-gradient(circle at bottom right, rgba(15, 142, 142, 0.16), transparent 32%),
     var(--background);
+}
+
+@keyframes share-pop {
+  0% { transform: scale(1); }
+  38% { transform: scale(0.9) rotate(-2deg); }
+  70% { transform: scale(1.08) rotate(1deg); }
+  100% { transform: scale(1); }
+}
+
+.share-pop {
+  animation: share-pop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
 }
 
 body {

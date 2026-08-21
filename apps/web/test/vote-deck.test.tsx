@@ -1,9 +1,9 @@
 import "@testing-library/jest-dom/vitest";
 import { useState } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { VOTE_VALUES, type VoteValue } from "@scrum-poker/protocol";
+import type { VoteValue } from "@scrum-poker/protocol";
 import { VoteDeck } from "../src/components/vote-deck.js";
 
 afterEach(() => {
@@ -11,21 +11,20 @@ afterEach(() => {
 });
 
 describe("VoteDeck", () => {
-  it("renders every planning card with a 44px hit target and selected text", () => {
+  it("renders every planning choice as a small poker card with one centered value", () => {
     const onVote = vi.fn();
+    const expectedValues = ["☕", "1", "2", "3", "5", "8", "13"];
 
     render(<VoteDeck onVote={onVote} revealed={false} selectedValue={"5"} />);
 
-    const cardButtons = screen.getAllByRole("button");
-    expect(cardButtons).toHaveLength(VOTE_VALUES.length);
-
-    for (const value of VOTE_VALUES) {
-      expect(screen.getByRole("button", { name: value })).toBeInTheDocument();
-    }
+    expect(screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(expectedValues);
 
     expect(screen.getByRole("button", { name: "5" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "0.5" }).className).toContain("min-h-11");
-    expect(screen.getByRole("button", { name: "0.5" }).className).toContain("min-w-11");
+    const coffeeCard = screen.getByRole("button", { name: "☕" });
+    expect(coffeeCard.className).toContain("aspect-[5/7]");
+    expect(coffeeCard.className).toContain("rounded-xl");
+    expect(coffeeCard.className).not.toContain("rounded-3xl");
+    expect(within(coffeeCard).getAllByText("☕")).toHaveLength(1);
     expect(screen.getByText(/selected card: 5/i)).toBeInTheDocument();
   });
 
